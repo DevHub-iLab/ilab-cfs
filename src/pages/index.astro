@@ -74,49 +74,64 @@ const HOW_IT_WORKS = [
 	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
 >
 	<div class="mx-auto flex min-h-full max-w-[1060px] flex-col">
-		<header class="nav px-[26px] py-[13px]" style="border-bottom: 1px solid var(--color-divider);">
-			<a class="nav-brand" href="/" aria-label="iLab CFS — home"><Wordmark /></a>
+		<header
+			class="nav gap-[22px] px-[26px] py-[13px]"
+			style="border-bottom: 1px solid var(--color-divider);"
+		>
+			<a class="nav-brand text-[18px]" href="/" aria-label="iLab CFS — home"><Wordmark /></a>
+			<a href="/" aria-current="page">Call for speakers</a>
+			<a href="/schedule">Schedule</a>
+			<a href="/archive">Archive</a>
 			{
 				user ? (
-					<a class="btn btn-secondary" style="padding: 7px 13px;" href="/proposals">
+					<a class="btn btn-secondary ml-auto" style="padding: 7px 13px;" href="/proposals">
 						Your proposals
 					</a>
 				) : (
-					<a class="btn btn-secondary" style="padding: 7px 13px;" href="/sign-in">
+					<a class="btn btn-secondary ml-auto" style="padding: 7px 13px;" href="/sign-in">
 						Sign in
 					</a>
 				)
 			}
 		</header>
 
-		<main class="mx-auto flex w-full max-w-[700px] flex-col gap-10 px-[24px] pt-[36px] pb-[46px]">
-			<section
-				class="flex flex-col gap-6 rounded-[14px] px-[26px] py-[32px] sm:px-[34px]"
-				style="background: radial-gradient(120% 100% at 30% 0%, var(--color-accent-900), var(--color-bg) 72%); box-shadow: var(--shadow-sm);"
+		<main class="mx-auto flex w-full max-w-[700px] flex-col gap-[28px] px-[24px] pt-[36px] pb-[46px]">
+			{/*
+			  The design leads with a photo here. There is no asset in the repo, so
+			  the panel is its gradient alone — same height, same scrim, same tags
+			  at the foot. Dropping an <img> in is the only change when one exists.
+			*/}
+			<div
+				class="relative overflow-hidden rounded-[14px]"
+				style="background: radial-gradient(120% 100% at 30% 0%, var(--color-accent-900), var(--color-bg) 72%);"
 			>
-				<div class="flex flex-wrap gap-2">
+				<div class="h-[168px] sm:h-[236px]"></div>
+				<div
+					class="absolute inset-x-0 bottom-0 flex flex-wrap gap-[8px] px-[18px] py-[16px]"
+					style="background: linear-gradient(to top, rgba(22, 24, 38, 0.92), transparent);"
+				>
 					<span class="tag tag-outline">{openLabel}</span>
 					<span class="tag tag-neutral">Innovation Lab @ NTU CCDS</span>
 				</div>
+			</div>
 
-				<div class="flex flex-col gap-3">
-					<div
-						class="text-[11px] uppercase"
-						style="letter-spacing: 0.1em; color: var(--color-accent);"
-					>
-						TechTalks · DevHub · Catalyst
-					</div>
-					<h1 class="m-0 max-w-[12em] text-[32px] sm:text-[40px]">Pitch a talk to the lab</h1>
-					<p
-						class="m-0 text-[16px]"
-						style="color: color-mix(in srgb, var(--color-text) 72%, transparent); text-wrap: pretty;"
-					>
-						One place to propose, one place to hear back. Sign in, write an abstract, keep
-						editing it for as long as you like — slides are optional until you're confirmed.
-						No cold emails, no Telegram threads, no proposal lost in someone's inbox.
-					</p>
+			<div class="flex flex-col gap-[12px]">
+				<div
+					class="text-[11px] uppercase"
+					style="letter-spacing: 0.1em; color: var(--color-accent);"
+				>
+					TechTalks · DevHub · Catalyst
 				</div>
-			</section>
+				<h1 class="m-0 max-w-[12em] text-[32px] sm:text-[40px]">Pitch a talk to the lab</h1>
+				<p
+					class="m-0 text-[16px]"
+					style="color: color-mix(in srgb, var(--color-text) 72%, transparent); text-wrap: pretty;"
+				>
+					One place to propose, one place to hear back. Sign in, write an abstract, keep
+					editing it for as long as you like — slides are optional until you're confirmed.
+					No cold emails, no Telegram threads, no proposal lost in someone's inbox.
+				</p>
+			</div>
 
 			<section class="flex flex-col gap-[10px]">
 				<h2 class="m-0 text-[20px]">Open calls</h2>
@@ -129,7 +144,7 @@ const HOW_IT_WORKS = [
 
 						return (
 							<article
-								class="grid items-center gap-4 rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+								class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
 								style={
 									closesAt
 										? 'background: linear-gradient(150deg, var(--color-accent-900), var(--color-surface) 74%); box-shadow: var(--shadow-sm);'
@@ -179,7 +194,7 @@ const HOW_IT_WORKS = [
 					   say what happens next rather than showing an empty heading. */
 					openCalls.length === 0 && (
 						<div
-							class="flex flex-col gap-2 rounded-[8px] px-[17px] py-[15px]"
+							class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
 							style="box-shadow: var(--shadow-sm);"
 						>
 							<span style="font: 500 15px var(--font-heading);">
@@ -200,7 +215,7 @@ const HOW_IT_WORKS = [
 				{
 					HOW_IT_WORKS.map(([step, detail], i) => (
 						<div
-							class="grid grid-cols-[26px_1fr] gap-3 py-[11px]"
+							class="grid grid-cols-[26px_1fr] gap-[12px] py-[11px]"
 							style={
 								i < HOW_IT_WORKS.length - 1
 									? 'border-bottom: 1px solid var(--color-divider);'
@@ -221,7 +236,7 @@ const HOW_IT_WORKS = [
 				}
 			</section>
 
-			<section class="flex flex-col gap-3 sm:flex-row">
+			<section class="flex flex-col gap-[12px] sm:flex-row">
 				<div class="card flex-1 gap-[5px]">
 					<div class="card-title">Edit anything, any time</div>
 					<p class="card-body">
