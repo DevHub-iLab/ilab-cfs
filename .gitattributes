@@ -1,0 +1,18 @@
+# Generated, never hand-written. Marking these collapses them in GitHub diffs
+# and keeps them out of the repository's language statistics.
+#
+# This only affects GitHub's rendering — `git diff` still shows them in full,
+# which is where the Better Auth schema is actually reviewed on regeneration.
+
+# wrangler types. 15k lines of Workers runtime typings.
+worker-configuration.d.ts linguist-generated=true
+
+# Better Auth CLI (`pnpm auth:generate`).
+src/db/auth-schema.ts linguist-generated=true
+
+# drizzle-kit's internal snapshots. The migration SQL beside them is
+# deliberately NOT marked: it is the reviewable record of a schema change.
+migrations/meta/** linguist-generated=true
+
+# drizzle-docs-generator (`pnpm docs:db`).
+docs/db/** linguist-generated=true
