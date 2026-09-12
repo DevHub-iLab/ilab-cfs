@@ -1,0 +1,305 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { configuredProviders } from '../lib/auth';
+
+// Reads env to decide which providers to show, and must never be a
+// build-time snapshot.
+export const prerender = false;
+
+/**
+ * Middleware sends people here as `/sign-in?redirect=<path>`, and that value
+ * is handed to Better Auth as the post-verification destination — so it is
+ * attacker-controlled input that ends up in a redirect. Anything that is not
+ * a plain same-site path is dropped rather than sanitised: a leading `//` or
+ * `/\` is read by browsers as protocol-relative and would send a freshly
+ * signed-in speaker to another origin.
+ */
+function safeRedirect(value: string | null): string {
+	if (!value || !value.startsWith('/')) return '/';
+	if (value.startsWith('//') || value.startsWith('/\\')) return '/';
+	return value;
+}
+
+const redirectTo = safeRedirect(Astro.url.searchParams.get('redirect'));
+
+// Better Auth bounces failed verifications back here with `?error=`, which is
+// nearly always a link that was already used or has aged out.
+const linkFailed = Astro.url.searchParams.has('error');
+
+const providerLabels = { google: 'Google', github: 'GitHub', linkedin: 'LinkedIn' } as const;
+---
+
+<Layout title="Sign in — iLab Call for Speakers">
+	<main class="grid min-h-full place-items-center px-6 py-16">
+		<div
+			class="w-full max-w-[520px] rounded-[14px] px-8 py-10 sm:px-11"
+			style="background: radial-gradient(110% 80% at 50% 0%, var(--color-accent-900), var(--color-bg) 68%); box-shadow: var(--shadow-sm);"
+		>
+			<div class="mb-8 flex items-center gap-3">
+				<svg viewBox="0 0 128 128" aria-hidden="true" class="block h-6 w-6 flex-none" style="fill: var(--color-accent);">
+					<path d="M50.4 78.5a75.1 75.1 0 0 0-28.5 6.9l24.2-65.7c.7-2 1.9-3.2 3.4-3.2h29c1.5 0 2.7 1.2 3.4 3.2l24.2 65.7s-11.6-7-28.5-7L67 45.5c-.4-1.7-1.6-2.8-2.9-2.8-1.3 0-2.5 1.1-2.9 2.7L50.4 78.5Zm-1.1 28.2Zm-4.2-20.2c-2 6.6-.6 15.8 4.2 20.2a17.5 17.5 0 0 1 .2-.7 5.5 5.5 0 0 1 5.7-4.5c2.8.1 4.3 1.5 4.7 4.7.2 1.1.2 2.3.2 3.5v.4c0 2.7.7 5.2 2.2 7.4a13 13 0 0 0 5.7 4.9v-.3l-.2-.3c-1.8-5.6-.5-9.5 4.4-12.8l1.5-1a73 73 0 0 0 3.2-2.2 16 16 0 0 0 6.8-11.4c.3-2 .1-4-.6-6l-.8.6-1.6 1a37 37 0 0 1-22.4 2.7c-5-.7-9.7-2-13.2-6.2Z"></path>
+				</svg>
+				<span style="font: 500 15px var(--font-heading);">iLab CFS</span>
+			</div>
+
+			{
+				linkFailed && (
+					<div
+						class="mb-7 flex flex-col gap-3 rounded-[8px] p-4"
+						style="background: var(--color-surface); box-shadow: var(--shadow-sm);"
+						role="status"
+					>
+						<div class="flex items-center gap-3">
+							<svg class="ic h-5 w-5" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--color-accent);">
+								<circle cx="12" cy="12" r="9"></circle>
+								<path d="M12 7.5v5M12 16v.4"></path>
+							</svg>
+							<span style="font: 500 14px var(--font-heading);">That link has expired</span>
+						</div>
+						<p class="m-0 text-[13px] leading-relaxed text-muted">
+							Sign-in links last 15 minutes and work once. Nothing's wrong with your
+							account — ask for a fresh one below.
+						</p>
+					</div>
+				)
+			}
+
+			<!-- Sign-in state -->
+			<section id="request" class="flex flex-col gap-6">
+				<div class="flex flex-col gap-2">
+					<h1 class="m-0 text-[27px] leading-tight">Sign in to pitch a talk</h1>
+					<p class="m-0 text-sm text-muted">
+						No password to forget. We'll email you a link, or use an account you
+						already have.
+					</p>
+				</div>
+
+				<form
+					id="magic-link-form"
+					class="flex flex-col gap-4"
+					data-callback={redirectTo}
+					novalidate
+				>
+					<div class="field">
+						<label for="email">Email</label>
+						<input
+							class="input"
+							id="email"
+							name="email"
+							type="email"
+							required
+							autocomplete="email"
+							placeholder="you@e.ntu.edu.sg — or any address"
+						/>
+					</div>
+
+					<p id="form-error" class="m-0 hidden text-[13px]" style="color: #f6a6a6;" role="alert"></p>
+
+					<button class="btn btn-primary btn-block" style="padding: 11px;" type="submit">
+						<span data-idle>Email me a sign-in link</span>
+						<span data-busy hidden>Sending…</span>
+					</button>
+				</form>
+
+				{
+					configuredProviders.length > 0 && (
+						<>
+							<div class="flex items-center gap-3">
+								<span class="h-px flex-1" style="background: var(--color-divider);"></span>
+								<span class="text-[11.5px] text-muted">or continue with</span>
+								<span class="h-px flex-1" style="background: var(--color-divider);"></span>
+							</div>
+
+							<div class="flex flex-col gap-2">
+								{configuredProviders.map((provider) => (
+									<button
+										class="btn btn-secondary btn-block"
+										style="padding: 10px;"
+										type="button"
+										data-provider={provider}
+									>
+										{provider === 'google' && (
+											<svg viewBox="0 0 24 24" aria-hidden="true" class="h-4 w-4 flex-none">
+												<path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+												<path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+												<path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.43.35-2.09V7.07H2.18A10.99 10.99 0 0 0 1 12c0 1.78.43 3.45 1.18 4.93l3.66-2.83z" />
+												<path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
+											</svg>
+										)}
+										{provider === 'github' && (
+											<svg viewBox="0 0 24 24" aria-hidden="true" class="h-4 w-4 flex-none">
+												<path fill="currentColor" d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7 0-.7 0-.7 1.2.1 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.3 1.3-3.2-.2-.3-.6-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.2 4.9 18.2 5.2 18.2 5.2c.7 1.7.3 2.9.1 3.2.8.9 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z" />
+											</svg>
+										)}
+										{provider === 'linkedin' && (
+											<svg viewBox="0 0 24 24" aria-hidden="true" class="h-4 w-4 flex-none">
+												<path fill="#0A66C2" d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zm1.78 13.02H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
+											</svg>
+										)}
+										{providerLabels[provider]}
+									</button>
+								))}
+							</div>
+						</>
+					)
+				}
+
+				<p class="m-0 text-[11.5px] leading-relaxed text-muted">
+					First time here? Signing in creates your account. By continuing you agree to
+					the <a href="/code-of-conduct">code of conduct</a>.
+				</p>
+			</section>
+
+			<!-- Link-sent state. The dead end, so it carries a way out of every
+			     failure mode rather than just saying "sent". -->
+			<section id="sent" class="flex flex-col gap-5" hidden>
+				<div
+					class="flex h-[46px] w-[46px] items-center justify-center rounded-[8px]"
+					style="background: var(--color-accent-800);"
+				>
+					<svg class="ic h-6 w-6" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--color-accent-100);">
+						<rect x="3" y="5" width="18" height="14" rx="2"></rect>
+						<path d="m3.5 7 8.5 6 8.5-6"></path>
+					</svg>
+				</div>
+
+				<div class="flex flex-col gap-2">
+					<h2 class="m-0 text-[27px] leading-tight">Check your inbox</h2>
+					<p class="m-0 text-sm text-muted">
+						We sent a sign-in link to <b id="sent-to" style="color: var(--color-text); font-weight: 500;"></b>.
+						It works once and expires in 15 minutes.
+					</p>
+				</div>
+
+				<div
+					class="flex flex-col gap-2 rounded-[8px] px-4 py-3.5"
+					style="background: var(--color-surface); box-shadow: var(--shadow-sm);"
+				>
+					<span style="font: 500 13px var(--font-heading);">Nothing yet?</span>
+					<span class="text-[13px] leading-relaxed text-muted">
+						Give it a minute, then check spam. Mail comes from
+						<span class="mono" style="color: var(--color-text);">no-reply@ilabccds.com</span>
+						— replying to it reaches nobody.
+					</span>
+				</div>
+
+				<p id="sent-error" class="m-0 hidden text-[13px]" style="color: #f6a6a6;" role="alert"></p>
+
+				<div class="flex gap-2">
+					<button class="btn btn-secondary flex-1" style="padding: 10px;" type="button" id="resend">
+						Resend link
+					</button>
+					<button class="btn btn-ghost flex-1" style="padding: 10px;" type="button" id="change-email">
+						Use a different email
+					</button>
+				</div>
+
+				<p class="m-0 text-[11.5px] text-muted">
+					You can close this tab — open the link on any device and you're in.
+				</p>
+			</section>
+		</div>
+	</main>
+</Layout>
+
+<script>
+	import { signIn } from '../lib/auth-client';
+
+	const form = document.querySelector<HTMLFormElement>('#magic-link-form')!;
+	const emailInput = document.querySelector<HTMLInputElement>('#email')!;
+	const requestPanel = document.querySelector<HTMLElement>('#request')!;
+	const sentPanel = document.querySelector<HTMLElement>('#sent')!;
+	const sentTo = document.querySelector<HTMLElement>('#sent-to')!;
+	const formError = document.querySelector<HTMLElement>('#form-error')!;
+	const sentError = document.querySelector<HTMLElement>('#sent-error')!;
+	const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+	const idleLabel = submitButton.querySelector<HTMLElement>('[data-idle]')!;
+	const busyLabel = submitButton.querySelector<HTMLElement>('[data-busy]')!;
+
+	// Where to land after the link is opened. Taken from the server-validated
+	// data attribute, never from the query string directly — reading the raw
+	// `?redirect=` here would hand an attacker back the open redirect that
+	// `safeRedirect` exists to close.
+	const callbackURL = form.dataset.callback || '/';
+
+	function showError(target: HTMLElement, message: string) {
+		target.textContent = message;
+		target.hidden = false;
+	}
+
+	function setBusy(busy: boolean) {
+		submitButton.disabled = busy;
+		idleLabel.hidden = busy;
+		busyLabel.hidden = !busy;
+	}
+
+	async function sendLink(email: string, errorTarget: HTMLElement) {
+		errorTarget.hidden = true;
+
+		const { error } = await signIn.magicLink({
+			email,
+			callbackURL,
+			// A dead link returns here rather than to a bare error page, so the
+			// recovery is on the same screen that can issue a new one.
+			errorCallbackURL: '/sign-in',
+		});
+
+		if (error) {
+			showError(
+				errorTarget,
+				error.message ?? "That didn't work. Give it a moment and try again.",
+			);
+			return false;
+		}
+
+		return true;
+	}
+
+	form.addEventListener('submit', async (event) => {
+		event.preventDefault();
+
+		const email = emailInput.value.trim();
+		if (!email || !emailInput.checkValidity()) {
+			showError(formError, 'Enter an email address we can reach you at.');
+			return;
+		}
+
+		setBusy(true);
+		const sent = await sendLink(email, formError);
+		setBusy(false);
+
+		if (!sent) return;
+
+		sentTo.textContent = email;
+		requestPanel.hidden = true;
+		sentPanel.hidden = false;
+	});
+
+	document.querySelector('#resend')!.addEventListener('click', async (event) => {
+		const button = event.currentTarget as HTMLButtonElement;
+		button.disabled = true;
+		await sendLink(emailInput.value.trim(), sentError);
+		button.disabled = false;
+	});
+
+	document.querySelector('#change-email')!.addEventListener('click', () => {
+		sentPanel.hidden = true;
+		requestPanel.hidden = false;
+		emailInput.focus();
+		emailInput.select();
+	});
+
+	for (const button of document.querySelectorAll<HTMLButtonElement>('[data-provider]')) {
+		button.addEventListener('click', async () => {
+			button.disabled = true;
+			const { error } = await signIn.social({
+				provider: button.dataset.provider as 'google' | 'github' | 'linkedin',
+				callbackURL,
+			});
+			if (error) {
+				showError(formError, error.message ?? 'That provider is unavailable right now.');
+				button.disabled = false;
+			}
+		});
+	}
+</script>

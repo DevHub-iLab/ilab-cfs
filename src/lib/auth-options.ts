@@ -84,21 +84,27 @@ export function authOptions(sendEmail: SendEmail) {
 
 		plugins: [
 			magicLink({
+				// 15 minutes, not the 5 minute default: the sign-in screen and
+				// the mail both promise 15, and a link that dies before the
+				// mail is read is the whole failure mode. Changing it means
+				// changing the copy in `src/pages/sign-in.astro` too.
+				expiresIn: 60 * 15,
 				// Only the hash is stored; the mailed token stays out of D1.
 				storeToken: 'hashed',
 				sendMagicLink: async ({ email, url }) => {
 					await sendEmail({
 						to: email,
-						subject: 'Your sign-in link — iLab Call for Speakers',
+						subject: 'Your sign-in link for iLab CFS',
 						text: [
-							'Sign in to the Innovation Lab call for speakers:',
+							"Here's your link. It signs you in once and stops working",
+							'after 15 minutes.',
 							'',
 							url,
 							'',
-							'This link expires in 5 minutes and can only be used once.',
-							'If you did not request it, you can ignore this email.',
+							"Didn't ask for this? Ignore it — nobody can sign in",
+							'without opening the link.',
 							'',
-							'Nobody reads replies to this address.',
+							"This mailbox isn't monitored.",
 						].join('\n'),
 					});
 				},

@@ -91,6 +91,7 @@ Changing the auth config goes `auth:generate` → **review the diff** → `db:ge
 ## Gotchas
 
 - **Restart the dev server after editing `wrangler.jsonc`, `.dev.vars`, or `astro.config.mjs`.** Bindings and secrets are read at startup and are not hot-reloaded.
+- **Changing `database_id` resets your local database.** Wrangler names the local SQLite file after that id, so editing it points local dev at a fresh empty one. Pages still render and only the first query fails, with a confusing `Failed query: select … from "rate_limit"`. Fix: `pnpm db:migrate:local`.
 - **After adding a variable to `.dev.vars`, re-run `pnpm generate-types`.** Worker env types are generated from that file, so a missing entry shows up as a type error where you use it.
 - **A new page behind auth needs `export const prerender = false`.** Astro is static by default here; without it the page ships as a build-time snapshot instead of running per request.
 - If you run the server with `--background`, its output goes to `astro dev logs --follow` rather than your terminal. Astro may also background it automatically inside AI-agent environments, where a *"failed to start within 30s"* message usually just means the slow first start is still in progress.

@@ -63,6 +63,16 @@ function socialProviders() {
 	return configured;
 }
 
+/**
+ * Which providers are actually usable, for the sign-in page to render. A
+ * button for an unconfigured provider is a button that errors, so the screen
+ * shows only what will work — the design's three are an aspiration, not a
+ * promise.
+ */
+export const configuredProviders = Object.keys(socialProviders()) as ReadonlyArray<
+	'google' | 'github' | 'linkedin'
+>;
+
 export const auth = betterAuth({
 	...authOptions(sendEmail),
 

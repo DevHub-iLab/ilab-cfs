@@ -151,6 +151,17 @@
   .text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
   .lighten { mix-blend-mode: lighten; background-color: transparent; }
 
+  /* — icons and code —
+     `.ic` is the stroked 24-viewBox icon: it inherits colour, so an icon is
+     tinted by setting `color` on it or an ancestor. Brand marks (Google,
+     GitHub) are filled rather than stroked and deliberately do not use it. */
+  .ic {
+    width: 15px; height: 15px; flex: none;
+    stroke: currentColor; fill: none;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .mono { font: 600 11px ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+
   /* — rules —
      Rules fade to transparent at both ends instead of stopping cleanly — a
      Nocturne signature, and not expressible as a utility. The ramp is 48px an
