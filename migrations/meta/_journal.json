@@ -8,6 +8,13 @@
       "when": 1789199134674,
       "tag": "0000_naive_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789209442474,
+      "tag": "0001_known_iron_monger",
+      "breakpoints": true
     }
   ]
 }

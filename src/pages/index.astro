@@ -1,18 +1,248 @@
 ---
+import { asc, gt, isNull, or, sql } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
+import Wordmark from '../components/Wordmark.astro';
+import { db } from '../db';
+import { cfp, type Track } from '../db/schema';
 
-export const prerender = true;
+/**
+ * The front door reads the open calls out of D1 on every request, so this
+ * cannot be prerendered: a build-time snapshot would keep advertising a call
+ * for as long as it took someone to redeploy, and the countdown beside it
+ * would be wrong from the first minute.
+ */
+export const prerender = false;
+
+const now = new Date();
+
+/**
+ * "Open" is `closes_at IS NULL OR closes_at > now` — the same predicate the
+ * submission guard runs in SQL, and the reason the table needs no `status`
+ * column. Ordering puts deadlines first, soonest to latest, and leaves the
+ * continuous calls underneath in the order they were created.
+ */
+const openCalls = await db
+	.select()
+	.from(cfp)
+	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
+	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
+
+const TRACK_LABELS: Record<Track, string> = {
+	techtalks: 'TechTalks',
+	devhub: 'DevHub workshop',
+	catalyst: 'Catalyst',
+};
+
+/** Instants are stored UTC and rendered in Singapore time — the talks are local. */
+const closingDate = new Intl.DateTimeFormat('en-SG', {
+	day: 'numeric',
+	month: 'short',
+	timeZone: 'Asia/Singapore',
+});
+
+/**
+ * Whole days remaining, floored. Deliberately not "closes today": at 11pm a
+ * deadline ten hours away is tomorrow on the wall clock, and the vaguer phrase
+ * is the one that stays true in every timezone the reader might be in.
+ */
+function timeLeft(closesAt: Date): string {
+	const days = Math.floor((closesAt.getTime() - now.getTime()) / 86_400_000);
+	if (days <= 0) return 'Less than a day left';
+	if (days === 1) return '1 day left';
+	return `${days} days left`;
+}
+
+const user = Astro.locals.user;
+
+const openLabel =
+	openCalls.length === 0
+		? 'No calls open'
+		: openCalls.length === 1
+			? '1 call open'
+			: `${openCalls.length} calls open`;
+
+const HOW_IT_WORKS = [
+	['Submit', "Title, abstract, format, level, topics, a short bio and links. Save a draft first if you'd rather."],
+	['Review', 'The committee reads the pool and comments. Not blind — we know who you are, and we judge the abstract.'],
+	['Decide', "Accepted talks join a standing pool. You'll get an email either way."],
+	['Scheduled', "We book you into a month's event. Slides are due a week before — that's when the deck stops being optional."],
+] as const;
 ---
 
-<Layout title="iLab Call for Speakers">
-	<main class="mx-auto flex min-h-full max-w-2xl flex-col justify-center gap-3 px-8 py-32">
-		<h1>Innovation Lab — Call for Speakers</h1>
-		<p>
-			Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session.
-		</p>
-		<!-- component class + utility: the utility wins on margin, .btn keeps the rest -->
-		<a class="btn btn-primary mt-2 self-start" href="#">Submit a proposal</a>
-		<hr class="hr" />
-		<p class="text-muted mb-0">Placeholder page — awaiting design.</p>
-	</main>
+<Layout
+	title="Call for speakers — Innovation Lab @ NTU CCDS"
+	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
+>
+	<div class="mx-auto flex min-h-full max-w-[1060px] flex-col">
+		<header class="nav px-[26px] py-[13px]" style="border-bottom: 1px solid var(--color-divider);">
+			<a class="nav-brand" href="/" aria-label="iLab CFS — home"><Wordmark /></a>
+			{
+				user ? (
+					<a class="btn btn-secondary" style="padding: 7px 13px;" href="/proposals">
+						Your proposals
+					</a>
+				) : (
+					<a class="btn btn-secondary" style="padding: 7px 13px;" href="/sign-in">
+						Sign in
+					</a>
+				)
+			}
+		</header>
+
+		<main class="mx-auto flex w-full max-w-[700px] flex-col gap-10 px-[24px] pt-[36px] pb-[46px]">
+			<section
+				class="flex flex-col gap-6 rounded-[14px] px-[26px] py-[32px] sm:px-[34px]"
+				style="background: radial-gradient(120% 100% at 30% 0%, var(--color-accent-900), var(--color-bg) 72%); box-shadow: var(--shadow-sm);"
+			>
+				<div class="flex flex-wrap gap-2">
+					<span class="tag tag-outline">{openLabel}</span>
+					<span class="tag tag-neutral">Innovation Lab @ NTU CCDS</span>
+				</div>
+
+				<div class="flex flex-col gap-3">
+					<div
+						class="text-[11px] uppercase"
+						style="letter-spacing: 0.1em; color: var(--color-accent);"
+					>
+						TechTalks · DevHub · Catalyst
+					</div>
+					<h1 class="m-0 max-w-[12em] text-[32px] sm:text-[40px]">Pitch a talk to the lab</h1>
+					<p
+						class="m-0 text-[16px]"
+						style="color: color-mix(in srgb, var(--color-text) 72%, transparent); text-wrap: pretty;"
+					>
+						One place to propose, one place to hear back. Sign in, write an abstract, keep
+						editing it for as long as you like — slides are optional until you're confirmed.
+						No cold emails, no Telegram threads, no proposal lost in someone's inbox.
+					</p>
+				</div>
+			</section>
+
+			<section class="flex flex-col gap-[10px]">
+				<h2 class="m-0 text-[20px]">Open calls</h2>
+
+				{
+					openCalls.map((call) => {
+						// Read off the property rather than a helper so the Date narrows
+						// for `closingDate.format` and `timeLeft` below.
+						const closesAt = call.closesAt;
+
+						return (
+							<article
+								class="grid items-center gap-4 rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+								style={
+									closesAt
+										? 'background: linear-gradient(150deg, var(--color-accent-900), var(--color-surface) 74%); box-shadow: var(--shadow-sm);'
+										: 'box-shadow: var(--shadow-sm);'
+								}
+							>
+								<div class="flex flex-col gap-[7px]">
+									<div class="flex flex-wrap items-center gap-[9px]">
+										<span class:list={['tag', closesAt ? 'tag-accent' : 'tag-neutral']}>
+											{TRACK_LABELS[call.track]}
+										</span>
+										{closesAt ? (
+											<>
+												<span class="tag tag-outline">
+													Closes {closingDate.format(closesAt)}
+												</span>
+												<span class="text-[12px]" style="color: var(--color-accent);">
+													{timeLeft(closesAt)}
+												</span>
+											</>
+										) : (
+											<span class="tag tag-outline">Always open</span>
+										)}
+									</div>
+
+									<span style="font: 500 17px var(--font-heading);">{call.name}</span>
+
+									{call.description && (
+										<span class="text-[13px] text-muted">{call.description}</span>
+									)}
+								</div>
+
+								<a
+									class="btn btn-primary justify-self-start"
+									style="padding: 9px 15px;"
+									href={`/proposals/new?cfp=${call.id}`}
+								>
+									Submit a proposal
+								</a>
+							</article>
+						);
+					})
+				}
+
+				{
+					/* Between calls is a real state, not an error — the page still has to
+					   say what happens next rather than showing an empty heading. */
+					openCalls.length === 0 && (
+						<div
+							class="flex flex-col gap-2 rounded-[8px] px-[17px] py-[15px]"
+							style="box-shadow: var(--shadow-sm);"
+						>
+							<span style="font: 500 15px var(--font-heading);">
+								Nothing is open at the moment
+							</span>
+							<span class="text-[13px] leading-relaxed text-muted">
+								TechTalks, DevHub workshops and Catalyst sessions all run again, and the
+								committee posts the next call here first. Proposals already in a closed
+								call are still being read — a closed call is not an archive.
+							</span>
+						</div>
+					)
+				}
+			</section>
+
+			<section>
+				<h2 class="m-0 mb-[10px] text-[20px]">How it works</h2>
+				{
+					HOW_IT_WORKS.map(([step, detail], i) => (
+						<div
+							class="grid grid-cols-[26px_1fr] gap-3 py-[11px]"
+							style={
+								i < HOW_IT_WORKS.length - 1
+									? 'border-bottom: 1px solid var(--color-divider);'
+									: ''
+							}
+						>
+							<span
+								class="mono"
+								style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 50%, transparent)'};`}
+							>
+								{String(i + 1).padStart(2, '0')}
+							</span>
+							<span class="text-[14px]">
+								<b style="font-weight: 500;">{step}.</b> {detail}
+							</span>
+						</div>
+					))
+				}
+			</section>
+
+			<section class="flex flex-col gap-3 sm:flex-row">
+				<div class="card flex-1 gap-[5px]">
+					<div class="card-title">Edit anything, any time</div>
+					<p class="card-body">
+						Proposals stay editable for life — even after you're scheduled. The public page
+						always shows your current version.
+					</p>
+				</div>
+				<div class="card flex-1 gap-[5px]">
+					<div class="card-title">A closed call isn't an archive</div>
+					<p class="card-body">
+						If a call closes before we decide, your proposal is still read, still reviewed,
+						still schedulable.
+					</p>
+				</div>
+			</section>
+
+			<p class="m-0 text-[13px] text-muted">
+				Mail from the platform comes from
+				<span class="mono" style="color: var(--color-text);">no-reply@ilabccds.com</span>
+				and nobody reads replies to it — every message we send ends at a link back here.
+			</p>
+		</main>
+	</div>
 </Layout>
