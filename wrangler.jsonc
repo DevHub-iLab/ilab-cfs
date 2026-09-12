@@ -10,5 +10,25 @@
 	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	// D1 is the system of record. `migrations_dir` points at drizzle-kit's
+	// output so `wrangler d1 migrations apply` is the only apply path.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ilab-cfs",
+			"database_id": "PLACEHOLDER_RUN_WRANGLER_D1_CREATE",
+			"migrations_dir": "./migrations"
+		}
+	],
+	// Better Auth's session cache. Deliberately NOT named `SESSION`: the
+	// Astro adapter auto-wires its own Sessions API to a binding of that
+	// name, which would quietly compete with Better Auth for identity.
+	// Nothing here is authoritative — every value is reconstructible from D1.
+	"kv_namespaces": [
+		{
+			"binding": "AUTH_KV",
+			"id": "PLACEHOLDER_RUN_WRANGLER_KV_NAMESPACE_CREATE"
+		}
+	]
 }

@@ -17,7 +17,20 @@ pnpm install
 pnpm dev        # astro dev — use `pnpm astro dev --background`, then `astro dev stop|status|logs`
 pnpm build      # astro build
 pnpm preview    # astro preview
+
+pnpm auth:generate      # Better Auth CLI -> src/db/auth-schema.ts (see auth.config.ts)
+pnpm db:generate        # drizzle-kit generate -> migrations/
+pnpm db:migrate:local   # wrangler d1 migrations apply --local
+pnpm db:migrate:remote  # the same, deployed
+pnpm docs:db            # drizzle-docs-generator -> docs/db (tables + ER diagram)
+pnpm generate-types     # wrangler types -> worker-configuration.d.ts
 ```
+
+The auth order is `auth:generate` → review the diff → `db:generate` → `db:migrate:*` → `docs:db`.
+
+`docs/db/` is **generated** — never hand-edit it. It is derived from `src/db/schema.ts`, not from a live database, so it needs no binding and regenerates offline; re-run `docs:db` in the same commit as any schema change or it silently goes stale. `drizzle-docs-generator` is pinned exactly because its output format, not just the schema, decides the diff. Note its bin is named `drizzle-docs` — that mismatch is why `npx drizzle-docs` works while `npm view drizzle-docs` 404s. **It cannot be run with `pnpm dlx`**: it pulls `esbuild`, whose build script pnpm blocks outside the workspace allowlist, so it is a devDependency rather than a one-off. Re-run `generate-types` after editing `wrangler.jsonc` **or `.dev.vars`** — secrets are typed onto `Env` from the latter, so a var missing there is a type error at its use site.
+
+Astro detects an agent environment and always backgrounds the dev server, so `--ignore-lock` is rejected and plain `pnpm dev` returns immediately. Cold start takes ~2 minutes, well past the CLI's own 30s watchdog: **"Dev server failed to start within 30s" is usually a slow start, not a failure.** Poll the port, or `astro dev logs`, before believing it.
 
 No test runner is set up yet; add one and document it here when the first test lands.
 
@@ -28,13 +41,21 @@ Two pnpm details that will otherwise waste your time:
 
 ## Current state
 
-Scaffolded: Astro + Cloudflare adapter + Tailwind 4, one placeholder page. Not yet built: D1/R2/KV bindings, Drizzle schema and migrations, Better Auth, Resend, and every real screen (no design yet).
+Scaffolded: Astro + Cloudflare adapter + Tailwind 4, one placeholder page, and authentication end to end — D1 + KV bindings, the Drizzle schema and its first migration, Better Auth (magic link, OAuth, roles, middleware), and the Resend send function.
+
+Not yet built: the R2 binding, every application table (`cfp`, `event`, `proposal`, …), and every real screen — **including `/sign-in`, which middleware already redirects to** (no design yet).
+
+Auth is verified working against local D1 + KV: magic link issued and consumed, session minted, role enforced, and a session surviving a KV miss by falling back to D1.
+
+**Both bindings carry placeholder ids.** `wrangler d1 create ilab-cfs` and `wrangler kv namespace create AUTH_KV`, then paste the real ids into `wrangler.jsonc` before deploying. Local development needs neither.
 
 ## Stack
 
 Astro 7 on Cloudflare Workers · D1 (Drizzle) · R2 · KV · Better Auth · Resend.
 
-Installed 2026-09-12: `astro@7.3.2`, `@astrojs/cloudflare@14.3.1`, `tailwindcss@4.3.3` (via `@tailwindcss/vite`), `wrangler@4.131.0` (pinned). Not yet installed: `drizzle-orm@0.45.2`, `drizzle-kit@0.31.10`, `better-auth@1.7.2`.
+Installed 2026-09-12: `astro@7.3.2`, `@astrojs/cloudflare@14.3.1`, `tailwindcss@4.3.3` (via `@tailwindcss/vite`), `wrangler@4.131.0` (pinned), `drizzle-orm@0.45.2`, `drizzle-kit@0.31.10`, `better-auth@1.7.4`, `@better-auth/drizzle-adapter@1.7.4`.
+
+Better Auth landed on 1.7.4 rather than the 1.7.2 planned in `docs/intent.md` — same minor, published well outside the 24-hour supply-chain window, and `@better-auth/drizzle-adapter` peer-requires exactly the `drizzle-orm@^0.45.2` already pinned. The `auth` CLI is run via `pnpm dlx auth@1.7.4` rather than installed; **keep that version in step with `better-auth`** or the generated schema drifts from the runtime.
 
 Tailwind 4 is CSS-first — no `tailwind.config.js`. The entry is `@import "tailwindcss"` in `src/styles/global.css`, pulled in by `src/layouts/Layout.astro`.
 
@@ -50,10 +71,23 @@ These are the mistakes most likely to be made from memory or from stale tutorial
 - **No `_worker.js` build output.** The entrypoint is `@astrojs/cloudflare/entrypoints/server`, resolved automatically. Never hand-write `main` to `dist/_worker.js/*`.
 - **`.assetsignore` is adapter-managed** (along with `_headers` and `_redirects`). Writing one by hand is a pre-v6 workaround.
 - **D1 has no interactive transactions.** Drizzle's `db.transaction()` exists and type-checks on D1 but emits raw `begin`/`commit` that the binding ignores. **Use `db.batch()`.** Treat `db.transaction()` as unavailable — this fails silently, not loudly.
-- **Better Auth adapters are separate packages** since 1.7.x: `@better-auth/drizzle-adapter`, not `better-auth/adapters/drizzle`.
-- **Astro's Sessions API auto-wires to a `SESSION` KV namespace**, which will quietly compete with Better Auth. Better Auth is the only source of truth for identity.
+- **Better Auth adapters moved into separate packages** in 1.7.x: `@better-auth/drizzle-adapter`. Corrected 2026-09-12 against the shipped 1.7.4: `better-auth/adapters/drizzle` still exists and still works — it is now a one-line re-export of the scoped package, which `better-auth` itself depends on. We import the scoped package directly because that is where the code actually lives, but code using the old path is not broken.
+- **Astro's Sessions API auto-wires to a `SESSION` KV namespace**, which will quietly compete with Better Auth. Better Auth is the only source of truth for identity. Settled two ways: `session: false` in `astro.config.mjs` turns the Astro one off, and Better Auth's KV binding is named `AUTH_KV` so it could not collide even if something re-enabled it.
 - **Static by default; opt into SSR per route.** `output` stays `"static"` and a page is server-rendered only if it exports `prerender = false` (the build flips to server mode as soon as one route does). Cloudflare's guide claims the adapter forces `output: 'server'` — it does not. **Forgetting `prerender = false` on an auth-gated or live page silently ships a build-time snapshot.**
 - **Astro 7:** Vite 8, stricter Rust compiler (unclosed tags are errors), Sätteri instead of remark/rehype, `compressHTML` defaults to `'jsx'`, and `src/fetch.ts` is reserved — no application code there.
+
+### Better Auth on Workers — all verified against 1.7.4, not docs
+
+Every one of these defaults is wrong *specifically* on Workers, and every one fails silently. They are configured in `src/lib/auth-options.ts`; the comments there say why. Re-check them on upgrade.
+
+- **`nodejs_compat` is not needed.** Every `node:` import in the package is confined to `test-utils/` and the Node integration — nothing on our path. Still don't add it pre-emptively.
+- **Better Auth cannot see Worker secrets.** Its env lookup reads `process.env`/Deno/Bun only, none of which exist here; Worker secrets arrive on the `env` binding. `secret` and `baseURL` are passed explicitly, or they are silently `undefined`.
+- **Rate limiting would be off in production.** `rateLimit.enabled` defaults to `isProduction`, derived from `NODE_ENV` — unset on Workers. Set it explicitly.
+- **`rateLimit.storage` defaults to `"secondary-storage"` whenever a secondary storage exists.** KV has no atomic increment, so limits silently undercount under concurrency. Ours is pinned to `"database"`, and the KV `increment` throws rather than approximating, so flipping it back cannot quietly weaken the limit.
+- **Verification records default to KV-only when a secondary storage exists** — that includes magic-link tokens, which would then be non-reconstructible from D1 and hostage to KV's eventual consistency. `verification.storeInDatabase: true`.
+- **`session.storeSessionInDatabase: true` is what makes KV a cache rather than a clock.** Re-confirmed on 1.7.4 by reading `findSession` and by deleting the KV key out from under a live session: it fell back to D1 and the session survived. **`preserveSessionInDatabase` must stay false** — it is part of the same condition and re-introduces the logout bug.
+- **Type inference is load-bearing on how the options are typed.** Annotating them `: BetterAuthOptions` widens `user.additionalFields` away and `session.user.role` stops existing; the options object uses `satisfies` instead.
+- **The Better Auth CLI cannot load `src/lib/auth.ts`** — it runs under Node, where `cloudflare:workers` does not resolve. `auth.config.ts` exists only to give the generator the schema-shaping options over a stub adapter. Its "Drizzle schema mismatch" and base-URL warnings are expected noise from that stub; the runtime adapter is silent, which is how you tell a real mismatch apart.
 
 ## Rules that shape the code
 

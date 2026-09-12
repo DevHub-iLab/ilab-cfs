@@ -1,0 +1,23 @@
+# Copy to `.dev.vars` (gitignored) for local development.
+# Deployed, every one of these is a Worker secret:
+#   wrangler secret put BETTER_AUTH_SECRET
+
+# 32+ chars. Generate with: openssl rand -base64 32
+BETTER_AUTH_SECRET=""
+
+# The origin Better Auth builds links and cookies against.
+# Must match how the site is actually reached, or magic links land on the
+# wrong host and cookies are rejected.
+BETTER_AUTH_URL="http://localhost:4321"
+
+# Resend. Unset locally, magic links print to the terminal instead of sending.
+RESEND_API_KEY=""
+
+# OAuth. A provider stays switched off until both halves of its pair are set,
+# so you can add them one at a time.
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GITHUB_CLIENT_ID=""
+GITHUB_CLIENT_SECRET=""
+LINKEDIN_CLIENT_ID=""
+LINKEDIN_CLIENT_SECRET=""

@@ -10,15 +10,27 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "generate-types": "wrangler types"
+    "generate-types": "wrangler types",
+    "auth:generate": "pnpm dlx auth@1.7.4 generate --config auth.config.ts --output src/db/auth-schema.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply ilab-cfs --local",
+    "db:migrate:remote": "wrangler d1 migrations apply ilab-cfs --remote",
+    "docs:db": "drizzle-docs generate src/db/schema.ts -d sqlite -o docs/db --force"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.1",
+    "@better-auth/drizzle-adapter": "1.7.4",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.2",
+    "better-auth": "1.7.4",
+    "drizzle-orm": "0.45.2",
     "tailwindcss": "^4.3.3",
     "wrangler": "4.131.0"
   },
   "private": true,
-  "packageManager": "pnpm@12.4.1"
+  "packageManager": "pnpm@12.4.1",
+  "devDependencies": {
+    "drizzle-docs-generator": "0.8.1",
+    "drizzle-kit": "0.31.10"
+  }
 }

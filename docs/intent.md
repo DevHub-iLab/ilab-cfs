@@ -97,7 +97,9 @@ Better Auth, backed by D1.
 - Roles (`speaker` / `reviewer` / `admin`) live in D1 and are enforced in middleware, not per-page, so a new protected route is covered by default.
 - **Sign-in** is by email magic link or OAuth (Google, GitHub, LinkedIn) rather than passwords. A call for speakers has to be frictionless for people outside the lab.
 
-**If sessions are cached in KV, set `session.storeSessionInDatabase: true`.** Better Auth issue [#4203](https://github.com/better-auth/better-auth/issues/4203) ("`secondaryStorage` ttl forces re-login on users") reported that `secondaryStorage` silently logs users out once its TTL elapses. The maintainer's workaround is that flag; the reporter confirmed it on 1.6.7 and the issue is closed. Re-confirm on 1.7.2, since it was a workaround rather than a code fix.
+**If sessions are cached in KV, set `session.storeSessionInDatabase: true`.** Better Auth issue [#4203](https://github.com/better-auth/better-auth/issues/4203) ("`secondaryStorage` ttl forces re-login on users") reported that `secondaryStorage` silently logs users out once its TTL elapses. The maintainer's workaround is that flag; the reporter confirmed it on 1.6.7 and the issue is closed.
+
+**Re-confirmed on 1.7.4 (2026-09-12), and it is still a condition rather than a fix.** `findSession` returns null on a secondary-storage miss unless `storeSessionInDatabase` is set, and only then reads the database. Verified end to end by deleting the KV entry under a live session: the session survived and was served from D1. One addition the issue does not mention — **`preserveSessionInDatabase` must stay false.** It sits in the same condition, so enabling it puts the logout back, by design: rows kept after revocation would otherwise let a KV miss resurrect a revoked session.
 
 It is the right shape regardless: it makes D1 authoritative for sessions and KV merely a cache — exactly what the [storage split](#storage-split) demands of KV.
 
