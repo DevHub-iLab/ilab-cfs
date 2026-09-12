@@ -13,3 +13,7 @@ pnpm-debug.log*
 .env.production
 .DS_Store
 .idea/
+
+# Design canvases pulled from claude.ai/design — source of truth lives there,
+# not in the repo. Kept locally as a porting reference.
+docs/design/
