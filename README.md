@@ -97,13 +97,31 @@ Changing the auth config goes `auth:generate` → **review the diff** → `db:ge
 
 ## Before the first deploy
 
-Not done yet, and each step needs someone with access to the lab's accounts:
+The D1 database and KV namespace exist and their ids are in `wrangler.jsonc`, as is the production origin. What's left needs someone with access to the lab's accounts:
 
-1. `wrangler d1 create ilab-cfs` and `wrangler kv namespace create AUTH_KV`, then replace the placeholder ids in `wrangler.jsonc`.
-2. `wrangler secret put BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `RESEND_API_KEY`.
-3. Register the Google / GitHub / LinkedIn OAuth apps. Each provider stays switched off until both halves of its credential pair are set, so they can be added one at a time.
-4. Verify the `ilabccds.com` sending domain in Resend. Mail goes out as `no-reply@ilabccds.com` and nobody reads replies.
-5. `pnpm db:migrate:remote`.
+1. **Secrets.** `wrangler secret put BETTER_AUTH_SECRET` (32+ chars) and `wrangler secret put RESEND_API_KEY`.
+
+   The first one asks *"There doesn't seem to be a Worker called ilab-cfs — create it?"*. **Say yes.** It uploads a no-op placeholder Worker purely to hold the secrets, which `wrangler deploy` then replaces. Setting secrets first is the right order: deploying before them puts the site live with `BETTER_AUTH_SECRET` undefined.
+
+   `BETTER_AUTH_URL` is *not* a secret — it is a `var` in `wrangler.jsonc`, next to the route it has to match.
+
+2. **OAuth apps.** Register each provider with the redirect URI for its id:
+
+   ```
+   https://cfs.ilabccds.com/api/auth/callback/google
+   https://cfs.ilabccds.com/api/auth/callback/github
+   https://cfs.ilabccds.com/api/auth/callback/linkedin
+   ```
+
+   Then `wrangler secret put GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and so on. A provider stays switched off until both halves of its pair are set, so they can be added one at a time. A mismatched redirect URI is the usual first failure, and the error comes from the provider rather than from here.
+
+3. **Resend.** Verify the `ilabccds.com` sending domain — its DNS is already on Cloudflare, so the records are self-serve. Mail goes out as `no-reply@ilabccds.com` and nobody reads replies.
+
+4. `pnpm db:migrate:remote`
+
+5. `wrangler deploy` — the site is then served at <https://cfs.ilabccds.com>, and wrangler creates that DNS record itself.
+
+Changing the domain means changing three things together: the `routes` pattern, `BETTER_AUTH_URL`, and every registered OAuth redirect URI.
 
 ## Further reading
 

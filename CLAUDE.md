@@ -47,7 +47,9 @@ Not yet built: the R2 binding, every application table (`cfp`, `event`, `proposa
 
 Auth is verified working against local D1 + KV: magic link issued and consumed, session minted, role enforced, and a session surviving a KV miss by falling back to D1.
 
-**Both bindings carry placeholder ids.** `wrangler d1 create ilab-cfs` and `wrangler kv namespace create AUTH_KV`, then paste the real ids into `wrangler.jsonc` before deploying. Local development needs neither.
+The D1 database and KV namespace exist, and `wrangler.jsonc` carries their real ids — local development uses neither, since wrangler emulates both from `.wrangler/state/`. Production is served from `cfs.ilabccds.com` via a `custom_domain` route, with `BETTER_AUTH_URL` set as a **var beside it rather than a secret**: it is public, and keeping the two adjacent is what stops the origin and the route drifting apart. Still outstanding before a deploy: the `BETTER_AUTH_SECRET` and `RESEND_API_KEY` secrets, the OAuth apps, and `db:migrate:remote` — see the README's deploy checklist.
+
+**The origin is load-bearing in three places at once** — the `routes` pattern, `BETTER_AUTH_URL`, and every OAuth redirect URI (`<origin>/api/auth/callback/<provider>`). Change one and change all three.
 
 ## Stack
 

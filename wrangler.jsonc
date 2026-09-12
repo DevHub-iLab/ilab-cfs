@@ -4,6 +4,19 @@
 	"compatibility_flags": ["global_fetch_strictly_public"],
 	"name": "ilab-cfs",
 	"main": "@astrojs/cloudflare/entrypoints/server",
+	// Served from the lab's own domain rather than workers.dev. Magic links go
+	// out from no-reply@ilabccds.com, and a sign-in link pointing at an
+	// unrelated host reads as phishing to recipients and spam filters alike —
+	// which matters for a CFP aimed at people outside the lab. The zone is
+	// already on Cloudflare, so wrangler creates the DNS record itself.
+	"routes": [{ "pattern": "cfs.ilabccds.com", "custom_domain": true }],
+	"vars": {
+		// Public, so it lives here rather than in a secret: it is the origin
+		// Better Auth builds links and scopes cookies against, and keeping it
+		// beside the route above is what stops the two drifting apart.
+		// Scheme included, no trailing slash. `.dev.vars` overrides it locally.
+		"BETTER_AUTH_URL": "https://cfs.ilabccds.com"
+	},
 	"assets": {
 		"directory": "./dist",
 		"binding": "ASSETS"
@@ -17,7 +30,7 @@
 		{
 			"binding": "DB",
 			"database_name": "ilab-cfs",
-			"database_id": "PLACEHOLDER_RUN_WRANGLER_D1_CREATE",
+			"database_id": "c73766ca-354e-4af9-b92e-62d20a8f60c7",
 			"migrations_dir": "./migrations"
 		}
 	],
@@ -28,7 +41,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "AUTH_KV",
-			"id": "PLACEHOLDER_RUN_WRANGLER_KV_NAMESPACE_CREATE"
+			"id": "d47baf20f3dd4ef6bef945b6c3dd685f"
 		}
 	]
 }
