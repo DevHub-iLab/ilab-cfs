@@ -8,17 +8,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **`docs/intent.md` is the source of truth for product and architecture decisions.** Read it before designing anything. It records not just what was decided but what was deliberately left out and why — several absences there (no `waitlisted` status, no cron, no conflict-of-interest check) are decisions, not gaps to close.
 
+## Commands
+
+**pnpm, not npm** — the lockfile is `pnpm-lock.yaml`.
+
+```
+pnpm install
+pnpm dev        # astro dev — use `pnpm astro dev --background`, then `astro dev stop|status|logs`
+pnpm build      # astro build
+pnpm preview    # astro preview
+```
+
+No test runner is set up yet; add one and document it here when the first test lands.
+
+Two pnpm details that will otherwise waste your time:
+
+- **Build scripts are blocked by default.** `esbuild` and `workerd` need theirs to fetch native binaries; they're allowlisted in `pnpm-workspace.yaml` under `onlyBuiltDependencies` (pnpm 12 no longer reads the `pnpm` key in `package.json`). A new dependency needing a postinstall goes there too, via `pnpm approve-builds`.
+- **A supply-chain policy rejects packages published within the last 24 hours.** `wrangler` is pinned to an exact `4.131.0` for that reason. When bumping, pick a release older than a day rather than relaxing the policy.
+
 ## Current state
 
-Design is settled; **nothing is scaffolded yet**. No `package.json`, no `wrangler.jsonc`, no `astro.config.mjs`, no tests. Build/dev/test commands go in this file once the project is generated.
-
-Scaffold with `wrangler setup` (or `wrangler deploy --x-autoconfig`) rather than hand-writing config — it detects Astro and writes the current shape.
+Scaffolded: Astro + Cloudflare adapter + Tailwind 4, one placeholder page. Not yet built: D1/R2/KV bindings, Drizzle schema and migrations, Better Auth, Resend, and every real screen (no design yet).
 
 ## Stack
 
 Astro 7 on Cloudflare Workers · D1 (Drizzle) · R2 · KV · Better Auth · Resend.
 
-Verified 2026-09-05: `astro@7.3.1`, `@astrojs/cloudflare@14.3.0` (peer-requires `astro@^7.2.0`, `wrangler@^4.125.0`), `drizzle-orm@0.45.2`, `drizzle-kit@0.31.10`, `better-auth@1.7.2`.
+Installed 2026-09-12: `astro@7.3.2`, `@astrojs/cloudflare@14.3.1`, `tailwindcss@4.3.3` (via `@tailwindcss/vite`), `wrangler@4.131.0` (pinned). Not yet installed: `drizzle-orm@0.45.2`, `drizzle-kit@0.31.10`, `better-auth@1.7.2`.
+
+Tailwind 4 is CSS-first — no `tailwind.config.js`. The entry is `@import "tailwindcss"` in `src/styles/global.css`, pulled in by `src/layouts/Layout.astro`.
+
+`wrangler.jsonc` currently has no `nodejs_compat` flag. Add it if Better Auth needs it — don't add it pre-emptively.
 
 ## Traps — verified against shipped packages, not docs
 
@@ -32,6 +52,7 @@ These are the mistakes most likely to be made from memory or from stale tutorial
 - **D1 has no interactive transactions.** Drizzle's `db.transaction()` exists and type-checks on D1 but emits raw `begin`/`commit` that the binding ignores. **Use `db.batch()`.** Treat `db.transaction()` as unavailable — this fails silently, not loudly.
 - **Better Auth adapters are separate packages** since 1.7.x: `@better-auth/drizzle-adapter`, not `better-auth/adapters/drizzle`.
 - **Astro's Sessions API auto-wires to a `SESSION` KV namespace**, which will quietly compete with Better Auth. Better Auth is the only source of truth for identity.
+- **Static by default; opt into SSR per route.** `output` stays `"static"` and a page is server-rendered only if it exports `prerender = false` (the build flips to server mode as soon as one route does). Cloudflare's guide claims the adapter forces `output: 'server'` — it does not. **Forgetting `prerender = false` on an auth-gated or live page silently ships a build-time snapshot.**
 - **Astro 7:** Vite 8, stricter Rust compiler (unclosed tags are errors), Sätteri instead of remark/rehype, `compressHTML` defaults to `'jsx'`, and `src/fetch.ts` is reserved — no application code there.
 
 ## Rules that shape the code
