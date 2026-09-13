@@ -98,10 +98,14 @@ const user = Astro.locals.user;
 		  The mark is the way back, so the nav carries no link to this page —
 		  that is the whole point of turn 4's note, and it is why "Call for
 		  speakers" is gone from the row.
+
+		  At rest the masthead carries neither ground nor rule, so the page opens
+		  on an unbroken hero; it frosts once the page moves underneath it.
 		*/}
 		<header
 			class="nav page-x gap-[24px] py-[15px]"
-			style="--page-edge: clamp(24px, 5vw, 30px); border-bottom: 1px solid var(--color-divider);"
+			style="--page-edge: clamp(24px, 5vw, 30px);"
+			data-nav
 		>
 			<a
 				class="nav-brand text-[18px] no-underline"
@@ -353,3 +357,90 @@ const user = Astro.locals.user;
 		</footer>
 	</div>
 </Layout>
+
+<style>
+	/*
+	  Unlayered on purpose: `.nav` lives in `@layer components`, and an
+	  unlayered rule beats every layered one outright, so none of this has to
+	  win a specificity argument with the component it is dressing.
+	*/
+	header {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+
+		/* The rule is present but transparent at rest rather than absent, so its
+		   arrival cannot shift the row by the pixel it occupies. */
+		border-bottom: 1px solid transparent;
+
+		/* blur(0) rather than no filter, so the blur interpolates instead of
+		   snapping on: `none` and a length are not interpolatable. The minifier
+		   writes this out as `blur() saturate()`, which is the same thing —
+		   both functions default to the identity when their argument is omitted.
+
+		   Prefixed first, standard last, and not the other way round: the CSS
+		   minifier treats the pair as one property and keeps the last one it
+		   sees, so authoring them in the reverse order silently ships WebKit's
+		   prefix alone and leaves Firefox translucent with nothing blurred
+		   behind it. */
+		-webkit-backdrop-filter: blur(0px) saturate(100%);
+		backdrop-filter: blur(0px) saturate(100%);
+
+		transition:
+			background-color 220ms ease,
+			border-color 220ms ease,
+			backdrop-filter 220ms ease,
+			-webkit-backdrop-filter 220ms ease;
+	}
+
+	header[data-stuck] {
+		/* The opaque ground is the default, not the fallback: a two-thirds
+		   transparent bar over scrolling text is unreadable, so legibility must not
+		   depend on a filter landing. The frost is layered on top where it can be
+		   painted. */
+		background: var(--color-bg);
+		border-bottom-color: var(--color-divider);
+	}
+
+	@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+		header[data-stuck] {
+			background: color-mix(in srgb, var(--color-bg) 68%, transparent);
+			-webkit-backdrop-filter: blur(16px) saturate(180%);
+			backdrop-filter: blur(16px) saturate(180%);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		header {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	const header = document.querySelector<HTMLElement>('[data-nav]');
+
+	if (header) {
+		let stuck = false;
+
+		/*
+		  8px rather than 0: scroll restoration and a trackpad's rubber-banding
+		  both settle a pixel or two off zero, and a rule that flickers at rest
+		  is worse than one that arrives a moment late.
+
+		  The guard matters more than the threshold — `scroll` fires far more
+		  often than the state changes, and writing the attribute on every frame
+		  would invalidate style for no reason.
+		*/
+		const update = () => {
+			const next = window.scrollY > 8;
+			if (next === stuck) return;
+			stuck = next;
+			header.toggleAttribute('data-stuck', next);
+		};
+
+		// Run once: a reload can restore a scroll position well down the page.
+		update();
+		addEventListener('scroll', update, { passive: true });
+	}
+</script>
