@@ -1,0 +1,184 @@
+---
+import type { Cfp, ProposalStatus } from '../db/schema';
+import type { ProposalContent } from '../lib/proposals';
+import { FORMATS, LEVELS } from '../db/schema';
+
+interface Props {
+	/** Where the form posts. Both write endpoints take the same field names. */
+	action: string;
+	content: ProposalContent;
+	/** Open calls to choose between. Empty once the proposal exists — see below. */
+	calls?: Cfp[];
+	/** The call this proposal belongs to, once it has one. */
+	call?: Cfp;
+	status?: ProposalStatus;
+	error?: string;
+}
+
+const { action, content, calls = [], call, status = 'draft', error } = Astro.props;
+
+const FORMAT_LABELS: Record<string, string> = {
+	talk: 'Talk',
+	workshop: 'Workshop',
+	lightning: 'Lightning',
+};
+const LEVEL_LABELS: Record<string, string> = {
+	beginner: 'Beginner',
+	intermediate: 'Intermediate',
+	advanced: 'Advanced',
+};
+
+const closing = call?.closesAt
+	? new Intl.DateTimeFormat('en-GB', {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZone: 'Asia/Singapore',
+		}).format(call.closesAt)
+	: null;
+---
+
+<form method="post" action={action} class="flex flex-col gap-[20px]">
+	{
+		error && (
+			<p
+				class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+				style="background: var(--color-surface); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
+				role="alert"
+			>
+				{error}
+			</p>
+		)
+	}
+
+	<div class="field">
+		<label for="cfp">Submitting to</label>
+		{
+			/* The call is chosen once and never changes. A proposal offered for a
+			   specific event must not quietly turn up in an unrelated month, so
+			   there is no reassignment here — a speaker who wants a second life
+			   for a talk resubmits it themselves. */
+			call ? (
+				<p class="m-0 text-[14px]">
+					{call.name}
+					{closing && <span class="text-muted"> · closes {closing} SGT</span>}
+				</p>
+			) : (
+				<div class="seg w-full flex-wrap">
+					{calls.map((c, i) => (
+						<label class="seg-opt flex-1 justify-center">
+							<input type="radio" name="cfp" value={c.id} checked={i === 0} required />
+							{c.name}
+						</label>
+					))}
+				</div>
+			)
+		}
+	</div>
+
+	<div class="field">
+		<label for="title">Title</label>
+		<input class="input" id="title" name="title" value={content.title} maxlength="200" />
+	</div>
+
+	<div class="field">
+		<label for="abstract">
+			Abstract <span style="color: var(--color-accent);">· required to submit</span>
+		</label>
+		<textarea class="input" id="abstract" name="abstract" style="min-height: 132px;"
+			>{content.abstract}</textarea
+		>
+		<p class="m-0 mt-[5px] text-[11px] text-muted">Reviewers judge this, not your slides.</p>
+	</div>
+
+	<div class="flex flex-col gap-[14px] sm:flex-row">
+		<div class="field flex-1">
+			<label>Format</label>
+			<div class="seg w-full">
+				{FORMATS.map((f) => (
+					<label class="seg-opt flex-1 justify-center">
+						<input type="radio" name="format" value={f} checked={content.format === f} />
+						{FORMAT_LABELS[f]}
+					</label>
+				))}
+			</div>
+		</div>
+		<div class="field flex-1">
+			<label>Level</label>
+			<div class="seg w-full">
+				{LEVELS.map((l) => (
+					<label class="seg-opt flex-1 justify-center">
+						<input type="radio" name="level" value={l} checked={content.level === l} />
+						{LEVEL_LABELS[l]}
+					</label>
+				))}
+			</div>
+		</div>
+	</div>
+
+	{
+		/* The design draws these as removable chips and a stack of link rows, both
+		   of which need scripting to add and remove. Plain fields carry the same
+		   data with none, and a richer editor can replace them later without
+		   changing what is stored. */
+	}
+	<div class="field">
+		<label for="topics">Topics</label>
+		<input
+			class="input"
+			id="topics"
+			name="topics"
+			value={content.topics.join(', ')}
+			placeholder="databases, migrations, team practice"
+		/>
+		<p class="m-0 mt-[5px] text-[11px] text-muted">Separate with commas.</p>
+	</div>
+
+	<div class="field">
+		<label for="bio">Short bio</label>
+		<textarea class="input" id="bio" name="bio" style="min-height: 64px;">{content.bio}</textarea>
+	</div>
+
+	<div class="field">
+		<label for="links">Links</label>
+		<textarea class="input" id="links" name="links" style="min-height: 64px;"
+			>{content.links.join('\n')}</textarea
+		>
+		<p class="m-0 mt-[5px] text-[11px] text-muted">One per line.</p>
+	</div>
+
+	<div class="field">
+		<label>Slides <span class="text-muted">· not yet</span></label>
+		<div
+			class="flex flex-col items-center gap-[7px] rounded-[8px] p-[20px] text-center"
+			style="box-shadow: inset 0 0 0 1px var(--color-divider); background: var(--color-surface);"
+		>
+			<span class="text-[13px] text-muted">Deck upload isn't built yet.</span>
+			<span class="text-[11px] text-muted">
+				It stays optional until you're confirmed, and is due a week before the event.
+			</span>
+		</div>
+	</div>
+
+	<div class="flex flex-wrap items-center gap-[10px] pt-[4px]">
+		{
+			status === 'draft' ? (
+				<>
+					<button class="btn btn-primary" style="padding: 9px 18px;" type="submit" name="intent" value="submit">
+						Submit proposal
+					</button>
+					<button class="btn btn-secondary" style="padding: 9px 14px;" type="submit" name="intent" value="save">
+						Keep as draft
+					</button>
+				</>
+			) : (
+				<button class="btn btn-primary" style="padding: 9px 18px;" type="submit" name="intent" value="save">
+					Save changes
+				</button>
+			)
+		}
+		{closing && <span class="ml-auto text-[12px] text-muted">This call closes {closing} SGT.</span>}
+	</div>
+</form>
