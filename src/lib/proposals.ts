@@ -52,24 +52,34 @@ function oneOf<T extends string>(values: readonly T[], raw: unknown, fallback: T
  */
 export function readContent(form: FormData): ProposalContent {
 	const text = (name: string) => String(form.get(name) ?? '').trim();
+	const list = (name: string) =>
+		form.getAll(name).map((v) => String(v).trim()).filter(Boolean);
+
+	/*
+	  Topics arrive from three places at once, which is what lets the chip
+	  editor work with no scripting: each chip carries a hidden `topics` input,
+	  the "add topic" box may hold several separated by commas, and a chip's ✕
+	  is a submit button naming the topic it removes. Order is preserved and
+	  duplicates collapse, so adding one that is already there is a no-op rather
+	  than a second identical chip.
+	*/
+	const removed = new Set(form.getAll('remove-topic').map((v) => String(v).trim()));
+	const added = text('add-topic')
+		.split(',')
+		.map((t) => t.trim())
+		.filter(Boolean);
+
+	const topics = [...new Set([...list('topics'), ...added])].filter((t) => !removed.has(t));
 
 	return {
 		title: text('title'),
 		abstract: text('abstract'),
 		format: oneOf(FORMATS, form.get('format'), 'talk'),
 		level: oneOf(LEVELS, form.get('level'), 'intermediate'),
-		// Comma-separated and newline-separated respectively: the design draws
-		// these as removable chips and a row of link inputs, which need
-		// scripting. Plain fields work with none, and the richer editors can
-		// replace them without touching this shape.
-		topics: text('topics')
-			.split(',')
-			.map((t) => t.trim())
-			.filter(Boolean),
-		links: text('links')
-			.split('\n')
-			.map((l) => l.trim())
-			.filter(Boolean),
+		topics,
+		// One input per link, including a blank one the speaker can type into
+		// without scripting. Empty rows drop out here rather than being stored.
+		links: list('links'),
 		bio: text('bio'),
 	};
 }

@@ -118,22 +118,78 @@ const closing = call?.closesAt
 		</div>
 	</div>
 
-	{
-		/* The design draws these as removable chips and a stack of link rows, both
-		   of which need scripting to add and remove. Plain fields carry the same
-		   data with none, and a richer editor can replace them later without
-		   changing what is stored. */
-	}
 	<div class="field">
-		<label for="topics">Topics</label>
-		<input
-			class="input"
-			id="topics"
-			name="topics"
-			value={content.topics.join(', ')}
-			placeholder="databases, migrations, team practice"
-		/>
-		<p class="m-0 mt-[5px] text-[11px] text-muted">Separate with commas.</p>
+		<label for="add-topic">Topics</label>
+		<div class="flex flex-wrap items-center gap-[7px] pt-[3px]" data-topics>
+			{
+				content.topics.map((topic) => (
+					<span class="tag tag-accent inline-flex items-center gap-[6px]" data-chip={topic}>
+						{topic}
+						<input type="hidden" name="topics" value={topic} />
+						{/*
+						  A submit button, not a scripted one: without any JavaScript this
+						  posts the form naming the topic to drop, the server rebuilds the
+						  list without it, and the save happens anyway. The script below
+						  only spares the round trip.
+						*/}
+						<button
+							type="submit"
+							name="remove-topic"
+							value={topic}
+							class="inline-flex cursor-pointer border-0 bg-transparent p-0"
+							style="color: inherit;"
+							aria-label={`Remove ${topic}`}
+						>
+							<svg viewBox="0 0 256 256" aria-hidden="true" class="block h-[10px] w-[10px] flex-none" style="fill: currentColor;">
+								<path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path>
+							</svg>
+						</button>
+					</span>
+				))
+			}
+			<input
+				class="tag tag-outline"
+				style="background: transparent; min-width: 11ch; width: 11ch;"
+				id="add-topic"
+				name="add-topic"
+				maxlength="120"
+				placeholder="+ add topic"
+				aria-label="Add a topic"
+			/>
+		</div>
+		<p class="m-0 mt-[6px] text-[11px] text-muted">
+			What the talk is about, so reviewers can spot overlap with the rest of the month.
+			Several at once is fine — separate them with commas.
+		</p>
+	</div>
+
+	<div class="field">
+		<label for="link-0">Links</label>
+		<p class="m-0 mb-[6px] text-[11px] text-muted">
+			Anything that helps us picture the talk or place you: a GitHub profile, the repo
+			or project it came out of, a write-up, slides or a recording of a previous talk.
+			All optional, and none of it is scored — reviewers judge the abstract.
+		</p>
+		<div class="flex flex-col gap-[7px]" data-links>
+			{
+				/* Existing links, then one empty row: adding a link needs no
+				   scripting, it just takes a save per link. */
+				[...content.links, ''].map((link, i) => (
+					<input
+						class="input"
+						id={i === 0 ? 'link-0' : undefined}
+						name="links"
+						type="text"
+						inputmode="url"
+						value={link}
+						placeholder="github.com/you"
+					/>
+				))
+			}
+			<button class="btn btn-ghost self-start" style="padding: 6px 10px;" type="submit" data-add-link>
+				+ Add link
+			</button>
+		</div>
 	</div>
 
 	<div class="field">
@@ -182,3 +238,105 @@ const closing = call?.closesAt
 		{closing && <span class="ml-auto text-[12px] text-muted">This call closes {closing} SGT.</span>}
 	</div>
 </form>
+
+<script>
+	/*
+	  Enhancement only. Every control here already works with scripting off: a
+	  chip's ✕ and "+ Add link" are submit buttons the server understands, and
+	  the "add topic" box is read on save. This just spares the round trip.
+	*/
+	const form = document.querySelector<HTMLFormElement>('form');
+	const topics = document.querySelector<HTMLElement>('[data-topics]');
+	const addTopic = document.querySelector<HTMLInputElement>('#add-topic');
+	const links = document.querySelector<HTMLElement>('[data-links]');
+
+	const CLOSE_PATH =
+		'M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z';
+
+	function chipFor(topic: string) {
+		const chip = document.createElement('span');
+		chip.className = 'tag tag-accent inline-flex items-center gap-[6px]';
+		chip.dataset.chip = topic;
+		chip.append(topic);
+
+		const value = document.createElement('input');
+		value.type = 'hidden';
+		value.name = 'topics';
+		value.value = topic;
+
+		const remove = document.createElement('button');
+		remove.type = 'submit';
+		remove.name = 'remove-topic';
+		remove.value = topic;
+		remove.className = 'inline-flex cursor-pointer border-0 bg-transparent p-0';
+		remove.style.color = 'inherit';
+		remove.setAttribute('aria-label', `Remove ${topic}`);
+		remove.innerHTML = `<svg viewBox="0 0 256 256" aria-hidden="true" class="block h-[10px] w-[10px] flex-none" style="fill: currentColor;"><path d="${CLOSE_PATH}"></path></svg>`;
+
+		chip.append(value, remove);
+		return chip;
+	}
+
+	function existing(): string[] {
+		return [...(topics?.querySelectorAll<HTMLElement>('[data-chip]') ?? [])].map(
+			(c) => c.dataset.chip ?? '',
+		);
+	}
+
+	// Removing a chip takes the hidden input with it, so the next save posts the
+	// list without it and no `remove-topic` is needed.
+	topics?.addEventListener('click', (event) => {
+		const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[name="remove-topic"]');
+		if (!button) return;
+		event.preventDefault();
+		button.closest<HTMLElement>('[data-chip]')?.remove();
+	});
+
+	function commitTopics() {
+		if (!addTopic || !topics) return;
+		const seen = new Set(existing());
+		for (const raw of addTopic.value.split(',')) {
+			const topic = raw.trim();
+			if (topic && !seen.has(topic)) {
+				seen.add(topic);
+				topics.insertBefore(chipFor(topic), addTopic);
+			}
+		}
+		addTopic.value = '';
+	}
+
+	addTopic?.addEventListener('keydown', (event) => {
+		// Enter would otherwise submit the whole form from a one-line field.
+		if (event.key === 'Enter' || event.key === ',') {
+			event.preventDefault();
+			commitTopics();
+		}
+	});
+
+	// A topic left half-typed is still meant, so it becomes a chip on the way out
+	// rather than being silently dropped.
+	addTopic?.addEventListener('blur', commitTopics);
+
+	document.querySelector('[data-add-link]')?.addEventListener('click', (event) => {
+		const rows = links?.querySelectorAll<HTMLInputElement>('input[name="links"]');
+		if (!rows || !links) return;
+		event.preventDefault();
+
+		// Nothing to add while a row is still blank — focus it instead.
+		const blank = [...rows].find((row) => !row.value.trim());
+		if (blank) {
+			blank.focus();
+			return;
+		}
+
+		const row = rows[rows.length - 1].cloneNode(true) as HTMLInputElement;
+		row.value = '';
+		row.removeAttribute('id');
+		links.insertBefore(row, event.currentTarget as HTMLElement);
+		row.focus();
+	});
+
+	// The add box may still hold an uncommitted topic when the form is sent by
+	// another route entirely (the Enter key in some other field, say).
+	form?.addEventListener('submit', commitTopics);
+</script>
