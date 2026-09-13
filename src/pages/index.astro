@@ -1,18 +1,471 @@
 ---
+import { asc, gt, isNull, or, sql } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
+import Wordmark from '../components/Wordmark.astro';
+import { db } from '../db';
+import { cfp, type Track } from '../db/schema';
 
-export const prerender = true;
+/**
+ * The front door reads the open calls out of D1 on every request, so this
+ * cannot be prerendered: a build-time snapshot would keep advertising a call
+ * for as long as it took someone to redeploy, and the countdown beside it
+ * would be wrong from the first minute.
+ */
+export const prerender = false;
+
+const now = new Date();
+
+/**
+ * "Open" is `closes_at IS NULL OR closes_at > now` — the same predicate the
+ * submission guard runs in SQL, and the reason the table needs no `status`
+ * column. Ordering puts deadlines first, soonest to latest, and leaves the
+ * continuous calls underneath in the order they were created.
+ */
+const openCalls = await db
+	.select()
+	.from(cfp)
+	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
+	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
+
+const TRACK_LABELS: Record<Track, string> = {
+	techtalks: 'TechTalks',
+	devhub: 'DevHub',
+	catalyst: 'Catalyst',
+};
+
+/**
+ * Instants are stored UTC and rendered in Singapore time — the talks are local.
+ * The month is taken as three letters because that is how the design writes it;
+ * Intl's own short month gives "Sept" for September in every English locale.
+ */
+const sgtParts = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'numeric',
+	timeZone: 'Asia/Singapore',
+});
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function closingDate(at: Date): string {
+	const part = Object.fromEntries(sgtParts.formatToParts(at).map((p) => [p.type, p.value]));
+	return `${Number(part.day)} ${MONTHS[Number(part.month) - 1]}`;
+}
+
+/**
+ * Whole days remaining, floored. Deliberately not "closes today": at 11pm a
+ * deadline ten hours away is tomorrow on the wall clock, and the vaguer phrase
+ * is the one that stays true in every timezone the reader might be in.
+ */
+function daysLeft(closesAt: Date): string {
+	const days = Math.floor((closesAt.getTime() - now.getTime()) / 86_400_000);
+	return days <= 0 ? '<1d left' : `${days}d left`;
+}
+
+/** Small counts read as words in this voice — "Three ways in", not "3 ways in". */
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const countWord = (n: number) => COUNT_WORDS[n] ?? String(n);
+
+const deadlined = openCalls.filter((call) => call.closesAt !== null).length;
+const continuous = openCalls.length - deadlined;
+
+/**
+ * The design's "One closes soon. Two never close." — made true of whatever is
+ * actually open, since the split between the two kinds of call is the whole
+ * point of the line.
+ */
+const callsSubtitle = [
+	deadlined > 0 && `${countWord(deadlined)} close${deadlined === 1 ? 's' : ''} soon.`,
+	continuous > 0 && `${countWord(continuous)} never close${continuous === 1 ? 's' : ''}.`,
+]
+	.filter(Boolean)
+	.join(' ');
+
+const HOW_IT_WORKS = [
+	'Sign in with a link — no password.',
+	'Write an abstract. Slides are optional.',
+	'The committee reads it and comments.',
+	'You hear back by email, then we book you in.',
+];
+
+const user = Astro.locals.user;
 ---
 
-<Layout title="iLab Call for Speakers">
-	<main class="mx-auto flex min-h-full max-w-2xl flex-col justify-center gap-3 px-8 py-32">
-		<h1>Innovation Lab — Call for Speakers</h1>
-		<p>
-			Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session.
-		</p>
-		<!-- component class + utility: the utility wins on margin, .btn keeps the rest -->
-		<a class="btn btn-primary mt-2 self-start" href="#">Submit a proposal</a>
-		<hr class="hr" />
-		<p class="text-muted mb-0">Placeholder page — awaiting design.</p>
-	</main>
+<Layout
+	title="Call for speakers — Innovation Lab @ NTU CCDS"
+	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
+>
+	<div
+		class="flex min-h-full flex-col"
+		style="background: radial-gradient(975px 560px at max(6%, calc(50% - 466px)) 0, var(--color-accent-900), var(--color-bg) 62%);"
+	>
+		{/*
+		  The mark is the way back, so the nav carries no link to this page —
+		  that is the whole point of turn 4's note, and it is why "Call for
+		  speakers" is gone from the row.
+
+		  At rest the masthead carries neither ground nor rule, so the page opens
+		  on an unbroken hero; it frosts once the page moves underneath it.
+		*/}
+		<header
+			class="nav page-x gap-[24px] py-[15px]"
+			style="--page-edge: clamp(24px, 5vw, 30px);"
+			data-nav
+		>
+			<a
+				class="nav-brand text-[18px] no-underline"
+				href="/"
+				aria-label="iLab CFS — home"
+			>
+				<Wordmark size={22} />
+			</a>
+			<a class="hidden sm:inline" href="/schedule">Schedule</a>
+			<a class="hidden sm:inline" href="/archive">Archive</a>
+
+			<div class="ml-auto flex gap-[9px]">
+				{
+					user ? (
+						<a class="btn btn-ghost" style="padding: 7px 12px;" href="/proposals">
+							Your proposals
+						</a>
+					) : (
+						<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
+							Sign in
+						</a>
+					)
+				}
+				<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+					Submit a proposal
+				</a>
+			</div>
+		</header>
+
+		<main class="flex-1">
+			<section
+				class="page-x grid items-center gap-[44px] pt-[44px] pb-[36px] sm:pt-[60px] sm:pb-[48px] lg:grid-cols-[1.05fr_.95fr]"
+			>
+				<div class="flex flex-col gap-[20px]">
+					<div
+						class="mono uppercase"
+						style="letter-spacing: 0.14em; color: var(--color-accent);"
+					>
+						Innovation Lab @ NTU CCDS
+					</div>
+
+					<h1
+						class="m-0 max-w-[13em] text-[38px] sm:text-[48px] lg:text-[58px]"
+						style="line-height: 1.02; letter-spacing: -0.02em;"
+					>
+						Every talk we run starts as somebody's half-finished idea.
+					</h1>
+
+					<p
+						class="m-0 max-w-[30em] text-[17px]"
+						style="color: color-mix(in srgb, var(--color-text) 70%, transparent); text-wrap: pretty;"
+					>
+						TechTalks, DevHub workshops and Catalyst sharing sessions — all proposed,
+						reviewed and scheduled here. Write an abstract, keep editing it, hear back by
+						email. Slides can wait.
+					</p>
+
+					<div class="flex flex-wrap items-center gap-[16px]">
+						<a
+							class="btn btn-primary"
+							style="padding: 12px 22px; font-size: 15px;"
+							href="/proposals/new"
+						>
+							Pitch a talk
+						</a>
+						<a class="text-[14px]" href="/schedule">See what's coming up →</a>
+					</div>
+				</div>
+
+				{/*
+				  A placeholder photograph until the lab picks the real one.
+
+				  It sits in a `.lighten` wrapper over the panel's own gradient, which
+				  is how the design integrates an image rather than pasting it on: the
+				  blend lets the photograph's dark areas sink into the ground instead
+				  of ending at a hard rectangle edge. Swapping the file is the only
+				  change a different photograph needs.
+
+				  Decorative, so `alt` is empty — the heading beside it carries the
+				  meaning, and announcing the picture would only add noise. Eager by
+				  design: this is above the fold, where `loading="lazy"` would delay
+				  the largest thing on the screen.
+				*/}
+				<div
+					class="overflow-hidden rounded-[14px]"
+					style="background: radial-gradient(110% 100% at 55% 0%, var(--color-accent-900), var(--color-bg) 76%);"
+				>
+					<div class="lighten">
+						<img
+							src="/ilab-welcome-tea.jpg"
+							alt=""
+							width="1200"
+							height="900"
+							class="h-[220px] w-full object-cover sm:h-[330px]"
+							style="opacity: 0.9;"
+						/>
+					</div>
+				</div>
+			</section>
+
+			<section class="page-x flex flex-col gap-[16px] py-[44px]">
+				<div class="flex flex-wrap items-baseline gap-[14px]">
+					<h2 class="m-0 text-[25px]">
+						{openCalls.length > 0 ? `${countWord(openCalls.length)} ways in` : 'Open calls'}
+					</h2>
+					{callsSubtitle && <span class="text-[13px] text-muted">{callsSubtitle}</span>}
+				</div>
+
+				<div class="grid gap-[14px] sm:grid-cols-2 lg:grid-cols-3">
+					{
+						openCalls.map((call) => {
+							// Read off the property rather than a helper so the Date narrows
+							// for `closingDate` and `daysLeft` below.
+							const closesAt = call.closesAt;
+
+							return (
+								<article
+									class="flex flex-col gap-[11px] rounded-[14px] p-[20px]"
+									style={
+										closesAt
+											? 'background: linear-gradient(155deg, var(--color-accent-900), var(--color-surface) 76%); box-shadow: var(--shadow-sm);'
+											: 'box-shadow: var(--shadow-sm);'
+									}
+								>
+									<div class="flex items-center gap-[8px]">
+										<span class:list={['tag', closesAt ? 'tag-accent' : 'tag-neutral']}>
+											{TRACK_LABELS[call.track]}
+										</span>
+										{closesAt ? (
+											<span class="mono ml-auto" style="color: var(--color-accent);">
+												{daysLeft(closesAt)}
+											</span>
+										) : (
+											<span class="tag tag-outline ml-auto">Always open</span>
+										)}
+									</div>
+
+									<div style="font: 500 18px/1.25 var(--font-heading);">{call.name}</div>
+
+									{call.description && (
+										<p
+											class="m-0 text-[13.5px]"
+											style="line-height: 1.6; color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+										>
+											{call.description}
+										</p>
+									)}
+
+									<div class="meta mt-auto text-[12.5px]">
+										<svg class="ic-solid" viewBox="0 0 256 256" aria-hidden="true">
+											<path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"></path>
+										</svg>
+										{closesAt ? `Closes ${closingDate(closesAt)}` : 'No deadline'}
+									</div>
+
+									<a
+										class:list={[
+											'btn btn-block',
+											closesAt ? 'btn-primary' : 'btn-secondary',
+										]}
+										style="padding: 9px;"
+										href={`/proposals/new?cfp=${call.id}`}
+									>
+										Submit a proposal
+									</a>
+								</article>
+							);
+						})
+					}
+				</div>
+
+				{
+					/* Between calls is a real state, not an error — the page still has to
+					   say what happens next rather than showing an empty heading. */
+					openCalls.length === 0 && (
+						<div
+							class="flex flex-col gap-[7px] rounded-[14px] p-[20px]"
+							style="box-shadow: var(--shadow-sm);"
+						>
+							<span style="font: 500 18px/1.25 var(--font-heading);">
+								Nothing is open at the moment
+							</span>
+							<span
+								class="text-[13.5px]"
+								style="line-height: 1.6; color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+							>
+								TechTalks, DevHub workshops and Catalyst sessions all run again, and the
+								committee posts the next call here first. Proposals already in a closed
+								call are still being read — a closed call is not an archive.
+							</span>
+						</div>
+					)
+				}
+			</section>
+
+			<section class="page-x pb-[44px]">
+				<div class="flex max-w-[520px] flex-col gap-[14px]">
+				<h2 class="m-0 text-[25px]">How it works</h2>
+				<div>
+					{
+						HOW_IT_WORKS.map((step, i) => (
+							<div
+								class="grid grid-cols-[24px_1fr] gap-[11px] py-[10px]"
+								style={
+									i < HOW_IT_WORKS.length - 1
+										? 'border-bottom: 1px solid var(--color-divider);'
+										: ''
+								}
+							>
+								<span
+									class="mono"
+									style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 48%, transparent)'};`}
+								>
+									{String(i + 1).padStart(2, '0')}
+								</span>
+								<span class="text-[13.5px]">{step}</span>
+							</div>
+						))
+					}
+				</div>
+				<p
+					class="m-0 rounded-[8px] px-[16px] py-[14px] text-[13px]"
+					style="box-shadow: inset 0 0 0 1px var(--color-divider); line-height: 1.6; color: color-mix(in srgb, var(--color-text) 70%, transparent);"
+				>
+					Your proposal stays yours — editable for its whole life, even after you're
+					scheduled.
+				</p>
+				</div>
+			</section>
+
+			<section
+				class="page-x flex flex-col items-start gap-[28px] pt-[40px] pb-[48px] md:flex-row md:items-center"
+				style="background: radial-gradient(88% 130% at 90% 100%, var(--color-accent-900), var(--color-bg) 62%); border-top: 1px solid var(--color-divider);"
+			>
+				<div class="flex flex-col gap-[8px]">
+					<h2 class="m-0 text-[26px] sm:text-[30px]">
+						You've explained it twice at lunch already.
+					</h2>
+					<p
+						class="m-0 text-[15px]"
+						style="color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+					>
+						Write it down once and we'll give you a room and sixty people.
+					</p>
+				</div>
+				<a
+					class="btn btn-primary whitespace-nowrap md:ml-auto"
+					style="padding: 12px 22px; font-size: 15px;"
+					href="/proposals/new"
+				>
+					Pitch a talk
+				</a>
+			</section>
+		</main>
+
+		<footer
+			class="page-x flex flex-wrap items-center gap-[18px] pt-[20px] pb-[26px] text-[12.5px]"
+			style="border-top: 1px solid var(--color-divider);"
+		>
+			<span style="color: color-mix(in srgb, var(--color-text) 48%, transparent);">
+				Innovation Lab @ NTU CCDS
+			</span>
+			<div class="ml-auto flex gap-[16px]">
+				<a href="/schedule">Schedule</a>
+				<a href="/archive">Archive</a>
+			</div>
+		</footer>
+	</div>
 </Layout>
+
+<style>
+	/*
+	  Unlayered on purpose: `.nav` lives in `@layer components`, and an
+	  unlayered rule beats every layered one outright, so none of this has to
+	  win a specificity argument with the component it is dressing.
+	*/
+	header {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+	}
+
+	/*
+	  The frost is a pseudo-element that fades in, rather than properties on the
+	  masthead that animate from their resting values. At rest it is not painted
+	  at all, so the masthead is genuinely nothing — no ground, no rule, and no
+	  identity `backdrop-filter` sitting there tinting the page through a
+	  compositing pass. It is also what keeps the rule from occupying a pixel of
+	  layout before it is visible: the box is taken out of flow.
+	*/
+	header::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		pointer-events: none;
+
+		opacity: 0;
+		transition: opacity 220ms ease;
+
+		/* The opaque ground is the default, not the fallback: a two-thirds
+		   transparent bar over scrolling text is unreadable, so legibility must
+		   not depend on a filter landing. The frost is layered over it below,
+		   where it can be painted. */
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-divider);
+	}
+
+	/*
+	  Prefixed first, standard last, and not the other way round: the CSS
+	  minifier treats the pair as one property and keeps the last one it sees,
+	  so authoring them in reverse silently ships WebKit's prefix alone and
+	  leaves Firefox translucent with nothing blurred behind it.
+	*/
+	@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+		header::before {
+			background: color-mix(in srgb, var(--color-bg) 68%, transparent);
+			-webkit-backdrop-filter: blur(16px) saturate(180%);
+			backdrop-filter: blur(16px) saturate(180%);
+		}
+	}
+
+	header[data-stuck]::before {
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		header::before {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	const header = document.querySelector<HTMLElement>('[data-nav]');
+
+	if (header) {
+		let stuck = false;
+
+		/*
+		  8px rather than 0: scroll restoration and a trackpad's rubber-banding
+		  both settle a pixel or two off zero, and a rule that flickers at rest
+		  is worse than one that arrives a moment late.
+
+		  The guard matters more than the threshold — `scroll` fires far more
+		  often than the state changes, and writing the attribute on every frame
+		  would invalidate style for no reason.
+		*/
+		const update = () => {
+			const next = window.scrollY > 8;
+			if (next === stuck) return;
+			stuck = next;
+			header.toggleAttribute('data-stuck', next);
+		};
+
+		// Run once: a reload can restore a scroll position well down the page.
+		update();
+		addEventListener('scroll', update, { passive: true });
+	}
+</script>

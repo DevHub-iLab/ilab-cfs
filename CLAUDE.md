@@ -34,6 +34,8 @@ The auth order is `auth:generate` → review the diff → `db:generate` → `db:
 
 Astro detects an agent environment and always backgrounds the dev server, so `--ignore-lock` is rejected and plain `pnpm dev` returns immediately. Cold start takes ~2 minutes, well past the CLI's own 30s watchdog: **"Dev server failed to start within 30s" is usually a slow start, not a failure.** Poll the port, or `astro dev logs`, before believing it.
 
+**`pnpm build` breaks a dev server that is already running.** The build clears `node_modules/.vite/deps_ssr`, which the running server still holds open, and every request afterwards 500s with `The file does not exist at ".../deps_ssr/astro_app_entrypoint_dev.js?v=…" which is in the optimize deps directory`. It reads like a code error and is not one — the fix is `astro dev stop` and start again. **Ignore the message's own advice to add the dependency to `optimizeDeps.exclude`**; nothing is wrong with the dependency.
+
 No test runner is set up yet; add one and document it here when the first test lands.
 
 Two pnpm details that will otherwise waste your time:
@@ -43,9 +45,13 @@ Two pnpm details that will otherwise waste your time:
 
 ## Current state
 
-Scaffolded: Astro + Cloudflare adapter + Tailwind 4, one placeholder page, and authentication end to end — D1 + KV bindings, the Drizzle schema and its first migration, Better Auth (magic link, OAuth, roles, middleware), and the Resend send function.
+Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp` table, and two screens — `/sign-in` and the homepage.
 
-Not yet built: the R2 binding, every application table (`cfp`, `event`, `proposal`, …), and every real screen — **including `/sign-in`, which middleware already redirects to** (no design yet).
+Not yet built: the R2 binding, every application table except `cfp` (`event`, `proposal`, `proposal_revision`, `review`, `attachment`, `audit_log`, `notification`), and every screen behind auth. `/proposals`, `/proposals/new`, `/review`, `/admin`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404 — middleware guards the first four by prefix, so signed-out visitors are redirected to sign-in and only then meet the 404.
+
+**There is no admin UI for creating a call**, so a local database has no open calls and the homepage correctly shows its empty state. Seed `cfp` rows by hand — the README has the SQL.
+
+The homepage is built from artboard 4a of the design canvas, minus four bands that read `event` and `proposal`: the hero's proposal count, the stat band, "Next up" and "Recently on stage". They were left out rather than filled with the design's sample figures, which would state invented numbers as fact on a public page. Each is a self-contained addition once those tables exist.
 
 Auth is verified working against local D1 + KV: magic link issued and consumed, session minted, role enforced, and a session surviving a KV miss by falling back to D1.
 
@@ -63,6 +69,8 @@ Better Auth landed on 1.7.4 rather than the 1.7.2 planned in `docs/intent.md` �
 
 Tailwind 4 is CSS-first — no `tailwind.config.js`. The entry is `@import "tailwindcss"` in `src/styles/global.css`, pulled in by `src/layouts/Layout.astro`.
 
+**Nocturne's 0.70x density makes every Tailwind spacing step 2.8px, not 4px** — `--spacing` is set in the `@theme` block, so `gap-3` is 8.4px, `p-6` is 16.8px, and so on down the scale. This is the trap when porting a design: a value the canvas states in pixels must be written in pixels (`gap-[12px]`), because the numbered utility that looks like it matches is 30% short. Nothing errors; the layout is just quietly tighter than the artboard everywhere at once.
+
 `wrangler.jsonc` currently has no `nodejs_compat` flag. Add it if Better Auth needs it — don't add it pre-emptively.
 
 ## Traps — verified against shipped packages, not docs
@@ -78,6 +86,7 @@ These are the mistakes most likely to be made from memory or from stale tutorial
 - **Better Auth adapters moved into separate packages** in 1.7.x: `@better-auth/drizzle-adapter`. Corrected 2026-09-12 against the shipped 1.7.4: `better-auth/adapters/drizzle` still exists and still works — it is now a one-line re-export of the scoped package, which `better-auth` itself depends on. We import the scoped package directly because that is where the code actually lives, but code using the old path is not broken.
 - **Astro's Sessions API auto-wires to a `SESSION` KV namespace**, which will quietly compete with Better Auth. Better Auth is the only source of truth for identity. Settled two ways: `session: false` in `astro.config.mjs` turns the Astro one off, and Better Auth's KV binding is named `AUTH_KV` so it could not collide even if something re-enabled it.
 - **Static by default; opt into SSR per route.** `output` stays `"static"` and a page is server-rendered only if it exports `prerender = false` (the build flips to server mode as soon as one route does). Cloudflare's guide claims the adapter forces `output: 'server'` — it does not. **Forgetting `prerender = false` on an auth-gated or live page silently ships a build-time snapshot.**
+- **`astro:assets` is wired to a binding we do not have.** The adapter's `imageService` defaults to `"cloudflare-binding"`, which routes every transform through Cloudflare Images and expects an `IMAGES` binding — `wrangler.jsonc` declares none, and `Env` has no such key. That is what the `Enabling image processing with Cloudflare Images…` line in every build is announcing. **It does not fail at build; it fails on the first image request in production**, because transforms happen per request. Until a binding exists, static images go in `public/` and are sized by hand. `imageService: 'compile'` is the alternative that needs no binding, at the cost of a slower build.
 - **Astro 7:** Vite 8, stricter Rust compiler (unclosed tags are errors), Sätteri instead of remark/rehype, `compressHTML` defaults to `'jsx'`, and `src/fetch.ts` is reserved — no application code there.
 
 ### Better Auth on Workers — all verified against 1.7.4, not docs

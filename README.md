@@ -64,6 +64,26 @@ pnpm exec wrangler d1 execute ilab-cfs --local \
 
 Access is enforced in middleware by route prefix (`/admin` needs admin, `/review` needs reviewer, `/proposals` and `/account` need any signed-in user), so a new page under one of those is protected the moment it is created. Signed out you get redirected to `/sign-in`; signed in without the role you get a 403. A 404 means the guard let you through and the page simply doesn't exist yet.
 
+## Seeing an open call locally
+
+The landing page renders whatever `cfp` rows are open — `closes_at IS NULL` for a
+continuous call, a future `closes_at` for an event-specific one. A fresh database
+has none, so the page correctly shows its empty state. There is no admin UI for
+creating calls yet, so seed a few by hand:
+
+```bash
+pnpm exec wrangler d1 execute ilab-cfs --local --command "
+INSERT INTO cfp (id, name, track, description, closes_at) VALUES
+ ('techtalk-oct', 'October TechTalk', 'techtalks', 'Three 25-minute slots.', unixepoch('now','+18 days') * 1000),
+ ('devhub', 'Hands-on workshops, any month', 'devhub', 'A continuous call — no deadline.', NULL),
+ ('catalyst', 'Senior sharing sessions', 'catalyst', 'Final-years and alumni, for juniors.', NULL);
+"
+```
+
+`track` is one of `techtalks`, `devhub`, `catalyst`. Closing a call is setting
+`closes_at` to a past instant — there is no status column, and the page's filter
+is the same predicate the submission guard runs.
+
 ## Poking at the data
 
 ```bash
