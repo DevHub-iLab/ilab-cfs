@@ -6,7 +6,7 @@
 
 | Name | Type | Default | Nullable | Children | Parents | Comment |
 |------|------|---------|----------|----------|---------|---------|
-| **id** | text | - | NO | [account.user_id](./account.md), [session.user_id](./session.md) | - | - |
+| **id** | text | - | NO | [account.user_id](./account.md), [proposal.speaker_id](./proposal.md), [session.user_id](./session.md) | - | - |
 | name | text | - | NO | - | - | - |
 | email | text | - | NO | - | - | - |
 | email_verified | integer | `false` | NO | - | - | - |
@@ -20,4 +20,5 @@
 | Parent | Child | Type |
 |--------|-------|------|
 | **[user.id](./user.md)** | [account.user_id](./account.md) | Many to One |
+| **[user.id](./user.md)** | [proposal.speaker_id](./proposal.md) | Many to One |
 | **[user.id](./user.md)** | [session.user_id](./session.md) | Many to One |

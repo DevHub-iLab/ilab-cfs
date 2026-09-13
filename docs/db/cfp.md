@@ -20,7 +20,7 @@ than picking our own, so one migration stream stays internally consistent.
 
 | Name | Type | Default | Nullable | Children | Parents | Comment |
 |------|------|---------|----------|----------|---------|---------|
-| **id** | text | - | NO | - | - | - |
+| **id** | text | - | NO | [proposal.cfp_id](./proposal.md) | - | - |
 | name | text | - | NO | - | - | - |
 | track | text | - | NO | - | - | - |
 | description | text | - | YES | - | - | The blurb under the name on the landing page. |
@@ -33,3 +33,9 @@ than picking our own, so one migration stream stays internally consistent.
 | Name | Columns | Unique | Type |
 |------|---------|--------|------|
 | cfp_closesAt_idx | closes_at | NO | - |
+
+### Relations
+
+| Parent | Child | Type |
+|--------|-------|------|
+| **[cfp.id](./cfp.md)** | [proposal.cfp_id](./proposal.md) | Many to One |
