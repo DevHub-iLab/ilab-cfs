@@ -93,7 +93,10 @@ const user = Astro.locals.user;
 	title="Call for speakers — Innovation Lab @ NTU CCDS"
 	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
 >
-	<div class="flex min-h-full flex-col">
+	<div
+		class="flex min-h-full flex-col"
+		style="background: radial-gradient(975px 560px at max(6%, calc(50% - 466px)) 0, var(--color-accent-900), var(--color-bg) 62%);"
+	>
 		{/*
 		  The mark is the way back, so the nav carries no link to this page —
 		  that is the whole point of turn 4's note, and it is why "Call for
@@ -138,7 +141,6 @@ const user = Astro.locals.user;
 		<main class="flex-1">
 			<section
 				class="page-x grid items-center gap-[44px] pt-[44px] pb-[36px] sm:pt-[60px] sm:pb-[48px] lg:grid-cols-[1.05fr_.95fr]"
-				style="background: radial-gradient(92% 120% at 6% 0%, var(--color-accent-900) 0%, var(--color-bg) 60%);"
 			>
 				<div class="flex flex-col gap-[20px]">
 					<div
@@ -368,50 +370,54 @@ const user = Astro.locals.user;
 		position: sticky;
 		top: 0;
 		z-index: 50;
-
-		/* The rule is present but transparent at rest rather than absent, so its
-		   arrival cannot shift the row by the pixel it occupies. */
-		border-bottom: 1px solid transparent;
-
-		/* blur(0) rather than no filter, so the blur interpolates instead of
-		   snapping on: `none` and a length are not interpolatable. The minifier
-		   writes this out as `blur() saturate()`, which is the same thing —
-		   both functions default to the identity when their argument is omitted.
-
-		   Prefixed first, standard last, and not the other way round: the CSS
-		   minifier treats the pair as one property and keeps the last one it
-		   sees, so authoring them in the reverse order silently ships WebKit's
-		   prefix alone and leaves Firefox translucent with nothing blurred
-		   behind it. */
-		-webkit-backdrop-filter: blur(0px) saturate(100%);
-		backdrop-filter: blur(0px) saturate(100%);
-
-		transition:
-			background-color 220ms ease,
-			border-color 220ms ease,
-			backdrop-filter 220ms ease,
-			-webkit-backdrop-filter 220ms ease;
 	}
 
-	header[data-stuck] {
+	/*
+	  The frost is a pseudo-element that fades in, rather than properties on the
+	  masthead that animate from their resting values. At rest it is not painted
+	  at all, so the masthead is genuinely nothing — no ground, no rule, and no
+	  identity `backdrop-filter` sitting there tinting the page through a
+	  compositing pass. It is also what keeps the rule from occupying a pixel of
+	  layout before it is visible: the box is taken out of flow.
+	*/
+	header::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		pointer-events: none;
+
+		opacity: 0;
+		transition: opacity 220ms ease;
+
 		/* The opaque ground is the default, not the fallback: a two-thirds
-		   transparent bar over scrolling text is unreadable, so legibility must not
-		   depend on a filter landing. The frost is layered on top where it can be
-		   painted. */
+		   transparent bar over scrolling text is unreadable, so legibility must
+		   not depend on a filter landing. The frost is layered over it below,
+		   where it can be painted. */
 		background: var(--color-bg);
-		border-bottom-color: var(--color-divider);
+		border-bottom: 1px solid var(--color-divider);
 	}
 
+	/*
+	  Prefixed first, standard last, and not the other way round: the CSS
+	  minifier treats the pair as one property and keeps the last one it sees,
+	  so authoring them in reverse silently ships WebKit's prefix alone and
+	  leaves Firefox translucent with nothing blurred behind it.
+	*/
 	@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-		header[data-stuck] {
+		header::before {
 			background: color-mix(in srgb, var(--color-bg) 68%, transparent);
 			-webkit-backdrop-filter: blur(16px) saturate(180%);
 			backdrop-filter: blur(16px) saturate(180%);
 		}
 	}
 
+	header[data-stuck]::before {
+		opacity: 1;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
-		header {
+		header::before {
 			transition: none;
 		}
 	}
