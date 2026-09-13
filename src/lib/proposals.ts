@@ -264,3 +264,55 @@ export async function submit(opts: {
 
 	return { ok: false, reason: open?.open ? 'not-draft' : 'closed' };
 }
+
+/**
+ * Take a pitch back.
+ *
+ * Allowed from `submitted` and `accepted` — including after a talk has been
+ * scheduled, which is deliberate: the public schedule is derived from the
+ * proposals behind it rather than snapshotted, so a withdrawal simply removes
+ * the talk from it. A draft is not withdrawn, it is deleted; there is nothing
+ * to take back.
+ */
+export async function withdraw(opts: { id: string; speakerId: string }): Promise<boolean> {
+	const result = await env.DB.prepare(
+		`update proposal set status = 'withdrawn', updated_at = ?
+		 where id = ? and speaker_id = ? and status in ('submitted', 'accepted')`,
+	)
+		.bind(Date.now(), opts.id, opts.speakerId)
+		.run();
+
+	return changed(result) === 1;
+}
+
+/**
+ * Delete a draft.
+ *
+ * Drafts only, because nothing else here is the speaker's alone to erase: once
+ * a proposal has been submitted the committee has read it, and the honest exit
+ * is `withdraw()`, which leaves the record standing. The revisions go with it
+ * on the foreign key's cascade — D1 enforces those, so no second statement is
+ * needed and none can be missed.
+ */
+export async function remove(opts: { id: string; speakerId: string }): Promise<boolean> {
+	const result = await env.DB.prepare(
+		`delete from proposal where id = ? and speaker_id = ? and status = 'draft'`,
+	)
+		.bind(opts.id, opts.speakerId)
+		.run();
+
+	/*
+	  `> 0`, not `=== 1`, and only here.
+
+	  D1 counts rows removed by a foreign key's cascade in `meta.changes`, so
+	  deleting a draft reports 1 plus one per revision — measured: 1 with no
+	  revisions, 2 with one, 4 with three. Asserting on exactly one row therefore
+	  called every real delete a failure while the delete itself went through,
+	  which is the worst shape a bug can take: the work happens and the answer
+	  says it did not.
+
+	  The guard is still exact. `id` is a primary key, so at most one proposal can
+	  match and anything above one is its own history following it out.
+	*/
+	return changed(result) > 0;
+}

@@ -1,0 +1,249 @@
+---
+import { desc, eq, sql } from 'drizzle-orm';
+import Layout from '../../layouts/Layout.astro';
+import Wordmark from '../../components/Wordmark.astro';
+import { db } from '../../db';
+import { cfp, proposal, type ProposalStatus } from '../../db/schema';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/sign-in?redirect=/proposals');
+
+const now = new Date();
+
+/**
+ * Status is the organising idea, so it orders the list: what needs the lab's
+ * attention first, then what needs the speaker's, then what is over. Within a
+ * status, most recently touched first.
+ */
+const rows = await db
+	.select({ proposal, cfp })
+	.from(proposal)
+	.innerJoin(cfp, eq(cfp.id, proposal.cfpId))
+	.where(eq(proposal.speakerId, user.id))
+	.orderBy(
+		sql`case ${proposal.status}
+			when 'accepted' then 0
+			when 'submitted' then 1
+			when 'draft' then 2
+			when 'rejected' then 3
+			else 4 end`,
+		desc(proposal.updatedAt),
+	);
+
+const date = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	timeZone: 'Asia/Singapore',
+});
+
+function daysUntil(at: Date): number {
+	return Math.floor((at.getTime() - now.getTime()) / 86_400_000);
+}
+
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const countWord = (n: number) => (COUNT_WORDS[n] ?? String(n)).toLowerCase();
+
+const STATUS_LABELS: Record<ProposalStatus, string> = {
+	draft: 'Draft',
+	submitted: 'Submitted',
+	accepted: 'Accepted · awaiting a slot',
+	rejected: 'Not accepted',
+	withdrawn: 'Withdrawn',
+};
+
+// The design's summary line names a scheduled talk. Nothing can be scheduled
+// until `event` exists, so this counts what is actually knowable instead.
+const SUMMARY_WORDS: Record<ProposalStatus, string> = {
+	accepted: 'accepted',
+	submitted: 'under review',
+	draft: 'still a draft',
+	rejected: 'not accepted',
+	withdrawn: 'withdrawn',
+};
+const counts = rows.reduce<Partial<Record<ProposalStatus, number>>>((acc, r) => {
+	acc[r.proposal.status] = (acc[r.proposal.status] ?? 0) + 1;
+	return acc;
+}, {});
+const breakdown = (Object.keys(SUMMARY_WORDS) as ProposalStatus[])
+	.filter((s) => counts[s])
+	.map((s) => `${countWord(counts[s]!)} ${SUMMARY_WORDS[s]}`)
+	.join(', ');
+const summary =
+	rows.length === 0
+		? 'Nothing pitched yet.'
+		: `${COUNT_WORDS[rows.length] ?? rows.length} pitch${rows.length === 1 ? '' : 'es'} — ${breakdown}.`;
+
+const notice = Astro.url.searchParams.has('withdrawn')
+	? 'Withdrawn. It stays here, and stays out of the schedule.'
+	: Astro.url.searchParams.has('deleted')
+		? 'Draft deleted, along with its history.'
+		: null;
+
+const ERRORS: Record<string, string> = {
+	withdraw: "That can't be withdrawn — a draft is deleted rather than taken back.",
+	delete: 'Only a draft can be deleted. Submitted pitches are withdrawn instead.',
+};
+const error = Astro.url.searchParams.get('error');
+---
+
+<Layout title="Your proposals — iLab CFS">
+	<div class="flex min-h-full flex-col">
+		<header
+			class="nav page-x gap-[22px] py-[13px]"
+			style="--page-edge: clamp(24px, 5vw, 26px); border-bottom: 1px solid var(--color-divider);"
+		>
+			<a class="nav-brand text-[18px] no-underline" href="/" aria-label="iLab CFS — home">
+				<Wordmark />
+			</a>
+			<a href="/proposals" aria-current="page">My proposals</a>
+			<a class="hidden sm:inline" href="/schedule">Schedule</a>
+			<a class="hidden sm:inline" href="/archive">Archive</a>
+			<span
+				class="ml-auto flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full text-[12px]"
+				style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
+				title={user.email}
+			>
+				{(user.name || user.email).trim().charAt(0).toUpperCase()}
+			</span>
+		</header>
+
+		<main class="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-[20px] px-[24px] pt-[32px] pb-[46px]">
+			<div class="flex flex-wrap items-end gap-[16px]">
+				<div>
+					<h1 class="m-0 mb-[4px] text-[32px]">Your proposals</h1>
+					<p class="m-0 text-[14px] text-muted">{summary}</p>
+				</div>
+				<a class="btn btn-primary ml-auto" style="padding: 8px 14px;" href="/proposals/new">
+					New proposal
+				</a>
+			</div>
+
+			{
+				notice && (
+					<p
+						class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+						style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
+						role="status"
+					>
+						{notice}
+					</p>
+				)
+			}
+			{
+				error && (
+					<p
+						class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+						style="background: var(--color-surface); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
+						role="alert"
+					>
+						{ERRORS[error] ?? ERRORS.withdraw}
+					</p>
+				)
+			}
+
+			{
+				rows.length === 0 && (
+					<div
+						class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
+						style="box-shadow: var(--shadow-sm);"
+					>
+						<span style="font: 500 16px var(--font-heading);">Nothing here yet</span>
+						<span class="text-[13px] text-muted">
+							A pitch starts as a title and an abstract — the rest can wait, and you can
+							keep editing it for as long as it lives.
+						</span>
+					</div>
+				)
+			}
+
+			<div class="flex flex-col gap-[10px]">
+				{
+					rows.map(({ proposal: p, cfp: call }) => {
+						const closesIn = call.closesAt ? daysUntil(call.closesAt) : null;
+
+						// The line under the title: what this status means for the speaker,
+						// and what if anything is theirs to do next.
+						const explain: Record<ProposalStatus, string> = {
+							draft: p.abstract
+								? 'Not submitted yet — the committee cannot see it.'
+								: 'Needs an abstract before you can submit it.',
+							submitted: 'Under review. You can keep editing while they read.',
+							accepted: `In the pool since ${p.submittedAt ? date.format(p.submittedAt) : date.format(p.createdAt)}. We'll book you into a month with room.`,
+							rejected: 'Not this time. Pitch it again to a call that never closes.',
+							withdrawn: 'Withdrawn. Nothing further happens to it.',
+						};
+
+						const meta =
+							p.status === 'draft' && closesIn !== null
+								? `${call.name} · ${closesIn <= 0 ? 'closed' : `closes in ${closesIn} days`}`
+								: p.status === 'submitted' && p.submittedAt
+									? `${call.name} · submitted ${date.format(p.submittedAt)}`
+									: call.name;
+
+						return (
+							<article
+								class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+								style={`box-shadow: var(--shadow-sm);${p.status === 'rejected' || p.status === 'withdrawn' ? ' opacity: 0.72;' : ''}`}
+							>
+								<div class="flex flex-col gap-[5px]">
+									<div class="flex flex-wrap items-center gap-[9px]">
+										<span
+											class:list={[
+												'tag',
+												p.status === 'accepted' ? 'tag-outline' : 'tag-neutral',
+											]}
+										>
+											{STATUS_LABELS[p.status]}
+										</span>
+										<span class="text-[12px] text-muted">{meta}</span>
+									</div>
+									<span style="font: 500 16px var(--font-heading);">
+										{p.title || 'Untitled proposal'}
+									</span>
+									<span class="text-[13px] text-muted">{explain[p.status]}</span>
+								</div>
+
+								<div class="flex gap-[8px] justify-self-start sm:justify-self-end">
+									<a
+										class:list={[
+											'btn',
+											p.status === 'draft' ? 'btn-primary' : 'btn-secondary',
+										]}
+										style="padding: 7px 12px;"
+										href={`/proposals/${p.id}`}
+									>
+										{p.status === 'draft' ? 'Finish it' : 'Edit'}
+									</a>
+
+									{
+										/* Both of these post rather than link: they change something,
+										   and a link that changes something is a link a crawler can
+										   pull. Each is guarded again in SQL regardless. */
+										p.status === 'draft' && (
+											<form method="post" action={`/proposals/${p.id}/delete`}>
+												<button class="btn btn-ghost" style="padding: 7px;" type="submit">
+													Delete
+												</button>
+											</form>
+										)
+									}
+									{
+										(p.status === 'submitted' || p.status === 'accepted') && (
+											<form method="post" action={`/proposals/${p.id}/withdraw`}>
+												<button class="btn btn-ghost" style="padding: 7px;" type="submit">
+													Withdraw
+												</button>
+											</form>
+										)
+									}
+								</div>
+							</article>
+						);
+					})
+				}
+			</div>
+		</main>
+	</div>
+</Layout>
