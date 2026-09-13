@@ -43,9 +43,13 @@ Two pnpm details that will otherwise waste your time:
 
 ## Current state
 
-Scaffolded: Astro + Cloudflare adapter + Tailwind 4, one placeholder page, and authentication end to end — D1 + KV bindings, the Drizzle schema and its first migration, Better Auth (magic link, OAuth, roles, middleware), and the Resend send function.
+Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp` table, and two screens — `/sign-in` and the homepage.
 
-Not yet built: the R2 binding, every application table (`cfp`, `event`, `proposal`, …), and every real screen — **including `/sign-in`, which middleware already redirects to** (no design yet).
+Not yet built: the R2 binding, every application table except `cfp` (`event`, `proposal`, `proposal_revision`, `review`, `attachment`, `audit_log`, `notification`), and every screen behind auth. `/proposals`, `/proposals/new`, `/review`, `/admin`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404 — middleware guards the first four by prefix, so signed-out visitors are redirected to sign-in and only then meet the 404.
+
+**There is no admin UI for creating a call**, so a local database has no open calls and the homepage correctly shows its empty state. Seed `cfp` rows by hand — the README has the SQL.
+
+The homepage is built from artboard 4a of the design canvas, minus four bands that read `event` and `proposal`: the hero's proposal count, the stat band, "Next up" and "Recently on stage". They were left out rather than filled with the design's sample figures, which would state invented numbers as fact on a public page. Each is a self-contained addition once those tables exist.
 
 Auth is verified working against local D1 + KV: magic link issued and consumed, session minted, role enforced, and a session surviving a KV miss by falling back to D1.
 
