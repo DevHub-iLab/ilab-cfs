@@ -94,6 +94,13 @@
      utility the font family already claims. Only the base/component layers
      need it, so it stays a plain variable. */
   --font-heading-weight: 500;
+
+  /* The gutter between the centred content column and the edge of its band.
+     A clamp rather than breakpoints, so the column detaches from the viewport
+     edge smoothly instead of jumping at 640px. `.nav` overrides it locally —
+     the masthead hugs the frame more closely than the body column does, which
+     is what the artboard draws. */
+  --page-edge: clamp(24px, 5vw, 60px);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -344,4 +351,24 @@
   }
   .dialog-body { font-size: 14px; opacity: 0.85; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Page shell — every band runs full-bleed so its ground (the masthead rule,
+   the hero and CTA glows, the footer rule) reaches both edges of the viewport,
+   while its contents sit on one centred column the width of the design's
+   artboard.
+
+   Padding rather than a nested wrapper, because a flex row like `.nav` has to
+   keep its own auto margins working — wrapping its children in a div would
+   break `.nav-brand`'s `margin-right: auto`.
+
+   1060px is the artboard's outer width, so subtracting the gutters leaves the
+   940px of content the design was drawn at.
+   ══════════════════════════════════════════════════════════════════════ */
+@utility page-x {
+  padding-inline: max(
+    var(--page-edge),
+    calc((100% - 1060px) / 2 + var(--page-edge))
+  );
 }

@@ -93,15 +93,15 @@ const user = Astro.locals.user;
 	title="Call for speakers — Innovation Lab @ NTU CCDS"
 	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
 >
-	<div class="mx-auto flex min-h-full max-w-[1060px] flex-col">
+	<div class="flex min-h-full flex-col">
 		{/*
 		  The mark is the way back, so the nav carries no link to this page —
 		  that is the whole point of turn 4's note, and it is why "Call for
 		  speakers" is gone from the row.
 		*/}
 		<header
-			class="nav gap-[24px] px-[24px] py-[15px] sm:px-[30px]"
-			style="border-bottom: 1px solid var(--color-divider);"
+			class="nav page-x gap-[24px] py-[15px]"
+			style="--page-edge: clamp(24px, 5vw, 30px); border-bottom: 1px solid var(--color-divider);"
 		>
 			<a
 				class="nav-brand text-[18px] no-underline"
@@ -131,9 +131,9 @@ const user = Astro.locals.user;
 			</div>
 		</header>
 
-		<main>
+		<main class="flex-1">
 			<section
-				class="grid items-center gap-[44px] px-[24px] pt-[44px] pb-[36px] sm:px-[60px] sm:pt-[60px] sm:pb-[48px] lg:grid-cols-[1.05fr_.95fr]"
+				class="page-x grid items-center gap-[44px] pt-[44px] pb-[36px] sm:pt-[60px] sm:pb-[48px] lg:grid-cols-[1.05fr_.95fr]"
 				style="background: radial-gradient(92% 120% at 6% 0%, var(--color-accent-900) 0%, var(--color-bg) 60%);"
 			>
 				<div class="flex flex-col gap-[20px]">
@@ -184,7 +184,7 @@ const user = Astro.locals.user;
 				</div>
 			</section>
 
-			<section class="flex flex-col gap-[16px] px-[24px] py-[44px] sm:px-[60px]">
+			<section class="page-x flex flex-col gap-[16px] py-[44px]">
 				<div class="flex flex-wrap items-baseline gap-[14px]">
 					<h2 class="m-0 text-[25px]">
 						{openCalls.length > 0 ? `${countWord(openCalls.length)} ways in` : 'Open calls'}
@@ -279,7 +279,8 @@ const user = Astro.locals.user;
 				}
 			</section>
 
-			<section class="flex max-w-[520px] flex-col gap-[14px] px-[24px] pb-[44px] sm:px-[60px]">
+			<section class="page-x pb-[44px]">
+				<div class="flex max-w-[520px] flex-col gap-[14px]">
 				<h2 class="m-0 text-[25px]">How it works</h2>
 				<div>
 					{
@@ -310,10 +311,11 @@ const user = Astro.locals.user;
 					Your proposal stays yours — editable for its whole life, even after you're
 					scheduled.
 				</p>
+				</div>
 			</section>
 
 			<section
-				class="flex flex-col items-start gap-[28px] px-[24px] pt-[40px] pb-[48px] sm:px-[60px] md:flex-row md:items-center"
+				class="page-x flex flex-col items-start gap-[28px] pt-[40px] pb-[48px] md:flex-row md:items-center"
 				style="background: radial-gradient(88% 130% at 90% 100%, var(--color-accent-900), var(--color-bg) 62%); border-top: 1px solid var(--color-divider);"
 			>
 				<div class="flex flex-col gap-[8px]">
@@ -338,7 +340,7 @@ const user = Astro.locals.user;
 		</main>
 
 		<footer
-			class="flex flex-wrap items-center gap-[18px] px-[24px] pt-[20px] pb-[26px] text-[12.5px] sm:px-[60px]"
+			class="page-x flex flex-wrap items-center gap-[18px] pt-[20px] pb-[26px] text-[12.5px]"
 			style="border-top: 1px solid var(--color-divider);"
 		>
 			<span style="color: color-mix(in srgb, var(--color-text) 48%, transparent);">
