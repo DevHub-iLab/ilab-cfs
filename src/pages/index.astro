@@ -29,44 +29,64 @@ const openCalls = await db
 
 const TRACK_LABELS: Record<Track, string> = {
 	techtalks: 'TechTalks',
-	devhub: 'DevHub workshop',
+	devhub: 'DevHub',
 	catalyst: 'Catalyst',
 };
 
-/** Instants are stored UTC and rendered in Singapore time — the talks are local. */
-const closingDate = new Intl.DateTimeFormat('en-SG', {
+/**
+ * Instants are stored UTC and rendered in Singapore time — the talks are local.
+ * The month is taken as three letters because that is how the design writes it;
+ * Intl's own short month gives "Sept" for September in every English locale.
+ */
+const sgtParts = new Intl.DateTimeFormat('en-GB', {
 	day: 'numeric',
-	month: 'short',
+	month: 'numeric',
 	timeZone: 'Asia/Singapore',
 });
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function closingDate(at: Date): string {
+	const part = Object.fromEntries(sgtParts.formatToParts(at).map((p) => [p.type, p.value]));
+	return `${Number(part.day)} ${MONTHS[Number(part.month) - 1]}`;
+}
 
 /**
  * Whole days remaining, floored. Deliberately not "closes today": at 11pm a
  * deadline ten hours away is tomorrow on the wall clock, and the vaguer phrase
  * is the one that stays true in every timezone the reader might be in.
  */
-function timeLeft(closesAt: Date): string {
+function daysLeft(closesAt: Date): string {
 	const days = Math.floor((closesAt.getTime() - now.getTime()) / 86_400_000);
-	if (days <= 0) return 'Less than a day left';
-	if (days === 1) return '1 day left';
-	return `${days} days left`;
+	return days <= 0 ? '<1d left' : `${days}d left`;
 }
 
-const user = Astro.locals.user;
+/** Small counts read as words in this voice — "Three ways in", not "3 ways in". */
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const countWord = (n: number) => COUNT_WORDS[n] ?? String(n);
 
-const openLabel =
-	openCalls.length === 0
-		? 'No calls open'
-		: openCalls.length === 1
-			? '1 call open'
-			: `${openCalls.length} calls open`;
+const deadlined = openCalls.filter((call) => call.closesAt !== null).length;
+const continuous = openCalls.length - deadlined;
+
+/**
+ * The design's "One closes soon. Two never close." — made true of whatever is
+ * actually open, since the split between the two kinds of call is the whole
+ * point of the line.
+ */
+const callsSubtitle = [
+	deadlined > 0 && `${countWord(deadlined)} close${deadlined === 1 ? 's' : ''} soon.`,
+	continuous > 0 && `${countWord(continuous)} never close${continuous === 1 ? 's' : ''}.`,
+]
+	.filter(Boolean)
+	.join(' ');
 
 const HOW_IT_WORKS = [
-	['Submit', "Title, abstract, format, level, topics, a short bio and links. Save a draft first if you'd rather."],
-	['Review', 'The committee reads the pool and comments. Not blind — we know who you are, and we judge the abstract.'],
-	['Decide', "Accepted talks join a standing pool. You'll get an email either way."],
-	['Scheduled', "We book you into a month's event. Slides are due a week before — that's when the deck stops being optional."],
-] as const;
+	'Sign in with a link — no password.',
+	'Write an abstract. Slides are optional.',
+	'The committee reads it and comments.',
+	'You hear back by email, then we book you in.',
+];
+
+const user = Astro.locals.user;
 ---
 
 <Layout
@@ -74,133 +94,182 @@ const HOW_IT_WORKS = [
 	description="Pitch a talk for TechTalks, a DevHub workshop, or a Catalyst sharing session at Innovation Lab, NTU CCDS."
 >
 	<div class="mx-auto flex min-h-full max-w-[1060px] flex-col">
+		{/*
+		  The mark is the way back, so the nav carries no link to this page —
+		  that is the whole point of turn 4's note, and it is why "Call for
+		  speakers" is gone from the row.
+		*/}
 		<header
-			class="nav gap-[22px] px-[26px] py-[13px]"
+			class="nav gap-[24px] px-[24px] py-[15px] sm:px-[30px]"
 			style="border-bottom: 1px solid var(--color-divider);"
 		>
-			<a class="nav-brand text-[18px]" href="/" aria-label="iLab CFS — home"><Wordmark /></a>
-			<a href="/" aria-current="page">Call for speakers</a>
-			<a href="/schedule">Schedule</a>
-			<a href="/archive">Archive</a>
-			{
-				user ? (
-					<a class="btn btn-secondary ml-auto" style="padding: 7px 13px;" href="/proposals">
-						Your proposals
-					</a>
-				) : (
-					<a class="btn btn-secondary ml-auto" style="padding: 7px 13px;" href="/sign-in">
-						Sign in
-					</a>
-				)
-			}
+			<a
+				class="nav-brand text-[18px] no-underline"
+				href="/"
+				aria-label="iLab CFS — home"
+			>
+				<Wordmark size={22} />
+			</a>
+			<a class="hidden sm:inline" href="/schedule">Schedule</a>
+			<a class="hidden sm:inline" href="/archive">Archive</a>
+
+			<div class="ml-auto flex gap-[9px]">
+				{
+					user ? (
+						<a class="btn btn-ghost" style="padding: 7px 12px;" href="/proposals">
+							Your proposals
+						</a>
+					) : (
+						<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
+							Sign in
+						</a>
+					)
+				}
+				<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+					Submit a proposal
+				</a>
+			</div>
 		</header>
 
-		<main class="mx-auto flex w-full max-w-[700px] flex-col gap-[28px] px-[24px] pt-[36px] pb-[46px]">
-			{/*
-			  The design leads with a photo here. There is no asset in the repo, so
-			  the panel is its gradient alone — same height, same scrim, same tags
-			  at the foot. Dropping an <img> in is the only change when one exists.
-			*/}
-			<div
-				class="relative overflow-hidden rounded-[14px]"
-				style="background: radial-gradient(120% 100% at 30% 0%, var(--color-accent-900), var(--color-bg) 72%);"
+		<main>
+			<section
+				class="grid items-center gap-[44px] px-[24px] pt-[44px] pb-[36px] sm:px-[60px] sm:pt-[60px] sm:pb-[48px] lg:grid-cols-[1.05fr_.95fr]"
+				style="background: radial-gradient(92% 120% at 6% 0%, var(--color-accent-900) 0%, var(--color-bg) 60%);"
 			>
-				<div class="h-[168px] sm:h-[236px]"></div>
-				<div
-					class="absolute inset-x-0 bottom-0 flex flex-wrap gap-[8px] px-[18px] py-[16px]"
-					style="background: linear-gradient(to top, rgba(22, 24, 38, 0.92), transparent);"
-				>
-					<span class="tag tag-outline">{openLabel}</span>
-					<span class="tag tag-neutral">Innovation Lab @ NTU CCDS</span>
+				<div class="flex flex-col gap-[20px]">
+					<div
+						class="mono uppercase"
+						style="letter-spacing: 0.14em; color: var(--color-accent);"
+					>
+						Innovation Lab @ NTU CCDS
+					</div>
+
+					<h1
+						class="m-0 max-w-[13em] text-[38px] sm:text-[48px] lg:text-[58px]"
+						style="line-height: 1.02; letter-spacing: -0.02em;"
+					>
+						Every talk we run starts as somebody's half-finished idea.
+					</h1>
+
+					<p
+						class="m-0 max-w-[30em] text-[17px]"
+						style="color: color-mix(in srgb, var(--color-text) 70%, transparent); text-wrap: pretty;"
+					>
+						TechTalks, DevHub workshops and Catalyst sharing sessions — all proposed,
+						reviewed and scheduled here. Write an abstract, keep editing it, hear back by
+						email. Slides can wait.
+					</p>
+
+					<div class="flex flex-wrap items-center gap-[16px]">
+						<a
+							class="btn btn-primary"
+							style="padding: 12px 22px; font-size: 15px;"
+							href="/proposals/new"
+						>
+							Pitch a talk
+						</a>
+						<a class="text-[14px]" href="/schedule">See what's coming up →</a>
+					</div>
 				</div>
-			</div>
 
-			<div class="flex flex-col gap-[12px]">
+				{/*
+				  The design sets a photograph here. There is no asset in the repo, so
+				  the panel is its gradient alone at the same height — an <img> is the
+				  only thing missing.
+				*/}
 				<div
-					class="text-[11px] uppercase"
-					style="letter-spacing: 0.1em; color: var(--color-accent);"
+					class="h-[220px] overflow-hidden rounded-[14px] sm:h-[330px]"
+					style="background: radial-gradient(110% 100% at 55% 0%, var(--color-accent-900), var(--color-bg) 76%);"
 				>
-					TechTalks · DevHub · Catalyst
 				</div>
-				<h1 class="m-0 max-w-[12em] text-[32px] sm:text-[40px]">Pitch a talk to the lab</h1>
-				<p
-					class="m-0 text-[16px]"
-					style="color: color-mix(in srgb, var(--color-text) 72%, transparent); text-wrap: pretty;"
-				>
-					One place to propose, one place to hear back. Sign in, write an abstract, keep
-					editing it for as long as you like — slides are optional until you're confirmed.
-					No cold emails, no Telegram threads, no proposal lost in someone's inbox.
-				</p>
-			</div>
+			</section>
 
-			<section class="flex flex-col gap-[10px]">
-				<h2 class="m-0 text-[20px]">Open calls</h2>
+			<section class="flex flex-col gap-[16px] px-[24px] py-[44px] sm:px-[60px]">
+				<div class="flex flex-wrap items-baseline gap-[14px]">
+					<h2 class="m-0 text-[25px]">
+						{openCalls.length > 0 ? `${countWord(openCalls.length)} ways in` : 'Open calls'}
+					</h2>
+					{callsSubtitle && <span class="text-[13px] text-muted">{callsSubtitle}</span>}
+				</div>
 
-				{
-					openCalls.map((call) => {
-						// Read off the property rather than a helper so the Date narrows
-						// for `closingDate.format` and `timeLeft` below.
-						const closesAt = call.closesAt;
+				<div class="grid gap-[14px] sm:grid-cols-2 lg:grid-cols-3">
+					{
+						openCalls.map((call) => {
+							// Read off the property rather than a helper so the Date narrows
+							// for `closingDate` and `daysLeft` below.
+							const closesAt = call.closesAt;
 
-						return (
-							<article
-								class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
-								style={
-									closesAt
-										? 'background: linear-gradient(150deg, var(--color-accent-900), var(--color-surface) 74%); box-shadow: var(--shadow-sm);'
-										: 'box-shadow: var(--shadow-sm);'
-								}
-							>
-								<div class="flex flex-col gap-[7px]">
-									<div class="flex flex-wrap items-center gap-[9px]">
+							return (
+								<article
+									class="flex flex-col gap-[11px] rounded-[14px] p-[20px]"
+									style={
+										closesAt
+											? 'background: linear-gradient(155deg, var(--color-accent-900), var(--color-surface) 76%); box-shadow: var(--shadow-sm);'
+											: 'box-shadow: var(--shadow-sm);'
+									}
+								>
+									<div class="flex items-center gap-[8px]">
 										<span class:list={['tag', closesAt ? 'tag-accent' : 'tag-neutral']}>
 											{TRACK_LABELS[call.track]}
 										</span>
 										{closesAt ? (
-											<>
-												<span class="tag tag-outline">
-													Closes {closingDate.format(closesAt)}
-												</span>
-												<span class="text-[12px]" style="color: var(--color-accent);">
-													{timeLeft(closesAt)}
-												</span>
-											</>
+											<span class="mono ml-auto" style="color: var(--color-accent);">
+												{daysLeft(closesAt)}
+											</span>
 										) : (
-											<span class="tag tag-outline">Always open</span>
+											<span class="tag tag-outline ml-auto">Always open</span>
 										)}
 									</div>
 
-									<span style="font: 500 17px var(--font-heading);">{call.name}</span>
+									<div style="font: 500 18px/1.25 var(--font-heading);">{call.name}</div>
 
 									{call.description && (
-										<span class="text-[13px] text-muted">{call.description}</span>
+										<p
+											class="m-0 text-[13.5px]"
+											style="line-height: 1.6; color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+										>
+											{call.description}
+										</p>
 									)}
-								</div>
 
-								<a
-									class="btn btn-primary justify-self-start"
-									style="padding: 9px 15px;"
-									href={`/proposals/new?cfp=${call.id}`}
-								>
-									Submit a proposal
-								</a>
-							</article>
-						);
-					})
-				}
+									<div class="meta mt-auto text-[12.5px]">
+										<svg class="ic-solid" viewBox="0 0 256 256" aria-hidden="true">
+											<path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"></path>
+										</svg>
+										{closesAt ? `Closes ${closingDate(closesAt)}` : 'No deadline'}
+									</div>
+
+									<a
+										class:list={[
+											'btn btn-block',
+											closesAt ? 'btn-primary' : 'btn-secondary',
+										]}
+										style="padding: 9px;"
+										href={`/proposals/new?cfp=${call.id}`}
+									>
+										Submit a proposal
+									</a>
+								</article>
+							);
+						})
+					}
+				</div>
 
 				{
 					/* Between calls is a real state, not an error — the page still has to
 					   say what happens next rather than showing an empty heading. */
 					openCalls.length === 0 && (
 						<div
-							class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
+							class="flex flex-col gap-[7px] rounded-[14px] p-[20px]"
 							style="box-shadow: var(--shadow-sm);"
 						>
-							<span style="font: 500 15px var(--font-heading);">
+							<span style="font: 500 18px/1.25 var(--font-heading);">
 								Nothing is open at the moment
 							</span>
-							<span class="text-[13px] leading-relaxed text-muted">
+							<span
+								class="text-[13.5px]"
+								style="line-height: 1.6; color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+							>
 								TechTalks, DevHub workshops and Catalyst sessions all run again, and the
 								committee posts the next call here first. Proposals already in a closed
 								call are still being read — a closed call is not an archive.
@@ -210,54 +279,75 @@ const HOW_IT_WORKS = [
 				}
 			</section>
 
-			<section>
-				<h2 class="m-0 mb-[10px] text-[20px]">How it works</h2>
-				{
-					HOW_IT_WORKS.map(([step, detail], i) => (
-						<div
-							class="grid grid-cols-[26px_1fr] gap-[12px] py-[11px]"
-							style={
-								i < HOW_IT_WORKS.length - 1
-									? 'border-bottom: 1px solid var(--color-divider);'
-									: ''
-							}
-						>
-							<span
-								class="mono"
-								style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 50%, transparent)'};`}
+			<section class="flex max-w-[520px] flex-col gap-[14px] px-[24px] pb-[44px] sm:px-[60px]">
+				<h2 class="m-0 text-[25px]">How it works</h2>
+				<div>
+					{
+						HOW_IT_WORKS.map((step, i) => (
+							<div
+								class="grid grid-cols-[24px_1fr] gap-[11px] py-[10px]"
+								style={
+									i < HOW_IT_WORKS.length - 1
+										? 'border-bottom: 1px solid var(--color-divider);'
+										: ''
+								}
 							>
-								{String(i + 1).padStart(2, '0')}
-							</span>
-							<span class="text-[14px]">
-								<b style="font-weight: 500;">{step}.</b> {detail}
-							</span>
-						</div>
-					))
-				}
+								<span
+									class="mono"
+									style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 48%, transparent)'};`}
+								>
+									{String(i + 1).padStart(2, '0')}
+								</span>
+								<span class="text-[13.5px]">{step}</span>
+							</div>
+						))
+					}
+				</div>
+				<p
+					class="m-0 rounded-[8px] px-[16px] py-[14px] text-[13px]"
+					style="box-shadow: inset 0 0 0 1px var(--color-divider); line-height: 1.6; color: color-mix(in srgb, var(--color-text) 70%, transparent);"
+				>
+					Your proposal stays yours — editable for its whole life, even after you're
+					scheduled.
+				</p>
 			</section>
 
-			<section class="flex flex-col gap-[12px] sm:flex-row">
-				<div class="card flex-1 gap-[5px]">
-					<div class="card-title">Edit anything, any time</div>
-					<p class="card-body">
-						Proposals stay editable for life — even after you're scheduled. The public page
-						always shows your current version.
+			<section
+				class="flex flex-col items-start gap-[28px] px-[24px] pt-[40px] pb-[48px] sm:px-[60px] md:flex-row md:items-center"
+				style="background: radial-gradient(88% 130% at 90% 100%, var(--color-accent-900), var(--color-bg) 62%); border-top: 1px solid var(--color-divider);"
+			>
+				<div class="flex flex-col gap-[8px]">
+					<h2 class="m-0 text-[26px] sm:text-[30px]">
+						You've explained it twice at lunch already.
+					</h2>
+					<p
+						class="m-0 text-[15px]"
+						style="color: color-mix(in srgb, var(--color-text) 68%, transparent);"
+					>
+						Write it down once and we'll give you a room and sixty people.
 					</p>
 				</div>
-				<div class="card flex-1 gap-[5px]">
-					<div class="card-title">A closed call isn't an archive</div>
-					<p class="card-body">
-						If a call closes before we decide, your proposal is still read, still reviewed,
-						still schedulable.
-					</p>
-				</div>
+				<a
+					class="btn btn-primary whitespace-nowrap md:ml-auto"
+					style="padding: 12px 22px; font-size: 15px;"
+					href="/proposals/new"
+				>
+					Pitch a talk
+				</a>
 			</section>
-
-			<p class="m-0 text-[13px] text-muted">
-				Mail from the platform comes from
-				<span class="mono" style="color: var(--color-text);">no-reply@ilabccds.com</span>
-				and nobody reads replies to it — every message we send ends at a link back here.
-			</p>
 		</main>
+
+		<footer
+			class="flex flex-wrap items-center gap-[18px] px-[24px] pt-[20px] pb-[26px] text-[12.5px] sm:px-[60px]"
+			style="border-top: 1px solid var(--color-divider);"
+		>
+			<span style="color: color-mix(in srgb, var(--color-text) 48%, transparent);">
+				Innovation Lab @ NTU CCDS
+			</span>
+			<div class="ml-auto flex gap-[16px]">
+				<a href="/schedule">Schedule</a>
+				<a href="/archive">Archive</a>
+			</div>
+		</footer>
 	</div>
 </Layout>

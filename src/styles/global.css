@@ -160,7 +160,20 @@
     stroke: currentColor; fill: none;
     stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   }
+  /* The canvas moved its newer screens to a filled 24px-grid icon set on a 256
+     viewBox, while the sign-in screen still draws the stroked ones above. Both
+     conventions are live, so this is a second class rather than a change to
+     `.ic` — a filled path under `.ic` renders as nothing, since that rule sets
+     `fill: none`. */
+  .ic-solid {
+    width: 15px; height: 15px; flex: none;
+    fill: currentColor; display: block;
+  }
   .mono { font: 600 11px ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+  .meta {
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+    color: color-mix(in srgb, var(--color-text) 62%, transparent);
+  }
 
   /* — rules —
      Rules fade to transparent at both ends instead of stopping cleanly — a
