@@ -179,14 +179,33 @@ const user = Astro.locals.user;
 				</div>
 
 				{/*
-				  The design sets a photograph here. There is no asset in the repo, so
-				  the panel is its gradient alone at the same height — an <img> is the
-				  only thing missing.
+				  A placeholder photograph until the lab picks the real one.
+
+				  It sits in a `.lighten` wrapper over the panel's own gradient, which
+				  is how the design integrates an image rather than pasting it on: the
+				  blend lets the photograph's dark areas sink into the ground instead
+				  of ending at a hard rectangle edge. Swapping the file is the only
+				  change a different photograph needs.
+
+				  Decorative, so `alt` is empty — the heading beside it carries the
+				  meaning, and announcing the picture would only add noise. Eager by
+				  design: this is above the fold, where `loading="lazy"` would delay
+				  the largest thing on the screen.
 				*/}
 				<div
-					class="h-[220px] overflow-hidden rounded-[14px] sm:h-[330px]"
+					class="overflow-hidden rounded-[14px]"
 					style="background: radial-gradient(110% 100% at 55% 0%, var(--color-accent-900), var(--color-bg) 76%);"
 				>
+					<div class="lighten">
+						<img
+							src="/ilab-welcome-tea.jpg"
+							alt=""
+							width="1200"
+							height="900"
+							class="h-[220px] w-full object-cover sm:h-[330px]"
+							style="opacity: 0.9;"
+						/>
+					</div>
 				</div>
 			</section>
 
