@@ -66,7 +66,7 @@ const closing = call?.closesAt
 					{closing && <span class="text-muted"> · closes {closing} SGT</span>}
 				</p>
 			) : (
-				<div class="seg w-full flex-wrap">
+				<div class="seg w-full">
 					{calls.map((c, i) => (
 						<label class="seg-opt flex-1 justify-center">
 							<input type="radio" name="cfp" value={c.id} checked={i === 0} required />
