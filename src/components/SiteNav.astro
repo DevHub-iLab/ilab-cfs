@@ -6,9 +6,20 @@ interface Props {
 	/** From `Astro.locals.user`. Decides the links and the right-hand actions. */
 	user: User | null;
 	current?: 'proposals' | 'schedule' | 'archive';
+	/**
+	 * Where this page's own content column starts, as a CSS length. The links
+	 * line up with it, so the masthead reads as part of the page rather than a
+	 * bar floating above it. Defaults to the `page-x` column most pages use; a
+	 * page laying itself out differently passes its own.
+	 */
+	align?: string;
 }
 
-const { user, current } = Astro.props;
+const {
+	user,
+	current,
+	align = 'max(var(--page-edge), calc((100% - 1060px) / 2 + var(--page-edge)))',
+} = Astro.props;
 
 const links = [
 	{ href: '/schedule', label: 'Schedule', key: 'schedule' as const, icon: '/calendar.svg' },
@@ -31,8 +42,13 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
   At rest it carries neither ground nor rule, so a page opens on an unbroken
   hero; it frosts once the page moves underneath it.
 */}
-<header class="nav gap-[18px] px-[16px] py-[8px] sm:px-[20px]" data-nav>
-	<a class="nav-brand no-underline" href="/" aria-label="iLab CFS — home">
+<header class="nav gap-[18px] py-[8px]" data-nav>
+	<a
+		class="nav-brand nav-mark no-underline"
+		href="/"
+		aria-label="iLab CFS — home"
+		style={`--align: ${align}; --mark: 53px;`}
+	>
 		<Wordmark size={20} />
 	</a>
 
@@ -52,7 +68,7 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		))
 	}
 
-	<div class="ml-auto flex items-center gap-[9px]">
+	<div class="ml-auto flex items-center gap-[9px] pr-[16px]">
 		{
 			user ? (
 				<div class="relative" data-user-menu>
@@ -174,6 +190,30 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		header::before {
 			transition: none;
 		}
+	}
+
+	/*
+	  The brand sits hard against the window's left edge, and reserves exactly
+	  enough width that the first link begins on the page's own content column
+	  — level with the title below it.
+	
+	  A width rather than absolute positioning: taken out of flow the mark
+	  would overlap the links at any width where the column starts before the
+	  mark ends, which is every screen narrower than the column. The `max()`
+	  floors it at the mark's own size, so a narrow screen stops aligning
+	  rather than colliding.
+	
+	  The header carries no horizontal padding of its own, which is what lets
+	  `100%` inside `--align` mean the window rather than the window less that
+	  padding. The right edge is padded on the actions group instead.
+	*/
+	.nav-mark {
+		display: flex;
+		align-items: center;
+		flex: none;
+		margin-right: 0;
+		padding-left: 16px;
+		width: max(calc(16px + var(--mark)), calc(var(--align) - 18px));
 	}
 
 	/*
