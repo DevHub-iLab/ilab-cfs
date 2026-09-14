@@ -11,8 +11,8 @@ interface Props {
 const { user, current } = Astro.props;
 
 const links = [
-	{ href: '/schedule', label: 'Schedule', key: 'schedule' as const },
-	{ href: '/archive', label: 'Archive', key: 'archive' as const },
+	{ href: '/schedule', label: 'Schedule', key: 'schedule' as const, icon: '/calendar.svg' },
+	{ href: '/archive', label: 'Archive', key: 'archive' as const, icon: '/archive.svg' },
 ];
 
 const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase();
@@ -31,13 +31,9 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
   At rest it carries neither ground nor rule, so a page opens on an unbroken
   hero; it frosts once the page moves underneath it.
 */}
-<header
-	class="nav page-x gap-[22px] py-[13px]"
-	style="--page-edge: clamp(24px, 5vw, 30px);"
-	data-nav
->
-	<a class="nav-brand text-[18px] no-underline" href="/" aria-label="iLab CFS — home">
-		<Wordmark />
+<header class="nav gap-[18px] px-[16px] py-[8px] sm:px-[20px]" data-nav>
+	<a class="nav-brand no-underline" href="/" aria-label="iLab CFS — home">
+		<Wordmark size={20} />
 	</a>
 
 	{/* Page context — the editor's save state, say. Empty on most pages. */}
@@ -46,10 +42,11 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 	{
 		links.map((link) => (
 			<a
-				class="hidden sm:inline"
+				class="nav-link hidden sm:inline-flex"
 				href={link.href}
 				aria-current={current === link.key ? 'page' : undefined}
 			>
+				<span class="nav-icon" style={`--icon: url('${link.icon}');`} aria-hidden="true" />
 				{link.label}
 			</a>
 		))
@@ -61,7 +58,7 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 				<div class="relative" data-user-menu>
 					<button
 						type="button"
-						class="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-full border-0 text-[12px]"
+						class="flex h-[24px] w-[24px] flex-none cursor-pointer items-center justify-center rounded-full border-0 text-[11px]"
 						style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
 						aria-label="Account menu"
 						aria-haspopup="menu"
@@ -175,6 +172,62 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 
 	@media (prefers-reduced-motion: reduce) {
 		header::before {
+			transition: none;
+		}
+	}
+
+	/*
+	  The links are near-white and dimmed, coming to full strength on hover and
+	  on the page you are on. `--color-text` rather than `#fff`: it is the
+	  system's own white (#e9e9ed), so the masthead matches every other surface
+	  instead of being a slightly brighter white beside them.
+
+	  These are scoped to `.nav-link` rather than `.nav a`, which would also
+	  catch the brand. Being unlayered they beat `.nav a:hover`'s accent colour
+	  from the component layer without a specificity contest.
+	*/
+	.nav-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12.5px;
+		color: color-mix(in srgb, var(--color-text) 65%, transparent);
+		transition: color 140ms ease;
+	}
+
+	.nav-link:hover,
+	.nav-link:focus-visible,
+	.nav-link[aria-current='page'] {
+		color: var(--color-text);
+	}
+
+	/*
+	  The icons are masks, not images. Both files paint with `currentColor`,
+	  which an <img> cannot resolve — it renders in its own context, where the
+	  colour would fall back to black and vanish on this ground. Masking paints
+	  `currentColor` through the file's shape instead, so an icon dims and
+	  brightens with the label beside it, including through the transition.
+
+	  Prefixed first, standard last: the minifier treats the pair as one property
+	  and keeps whichever it sees last.
+	*/
+	.nav-icon {
+		width: 14px;
+		height: 14px;
+		flex: none;
+		background: currentColor;
+		-webkit-mask-image: var(--icon);
+		mask-image: var(--icon);
+		-webkit-mask-size: contain;
+		mask-size: contain;
+		-webkit-mask-repeat: no-repeat;
+		mask-repeat: no-repeat;
+		-webkit-mask-position: center;
+		mask-position: center;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.nav-link {
 			transition: none;
 		}
 	}
