@@ -1,19 +1,17 @@
 ---
 /**
- * The lab's logotype, painted from `public/ilab.svg`.
+ * The lab's mark, painted from `public/favicon.svg` — the same drawing the
+ * browser tab shows, so there is one file to change when it changes.
  *
  * It is a mask rather than an `<img>` because the file draws itself in
  * `currentColor`: inside an `<img>` that resolves against the image's own
  * context, where it falls back to black and disappears on this ground. Masking
- * paints a colour we choose through the file's shape, so the mark stays the
- * accent everywhere and the file stays the single source of the artwork.
+ * paints a colour we choose through the file's shape instead.
  *
- * The file is 345x130, so `size` is its HEIGHT and the width follows from the
- * ratio — it is a logotype, not a square icon. (`favicon.svg` is the browser
- * tab's 24x24 mark and a different drawing entirely.)
+ * The file is square (24x24), so one `size` sets both edges.
  */
 interface Props {
-	/** Height in px. */
+	/** Edge length in px. */
 	size?: number;
 	/**
 	 * An accessible name. Omit inside something already labelled — a link with
@@ -24,14 +22,11 @@ interface Props {
 }
 
 const { size = 20, label, class: className } = Astro.props;
-
-const RATIO = 345 / 130;
-const width = Math.round(size * RATIO);
 ---
 
 <span
 	class:list={['wordmark', className]}
-	style={`width: ${width}px; height: ${size}px;`}
+	style={`width: ${size}px; height: ${size}px;`}
 	role={label ? 'img' : undefined}
 	aria-label={label}
 	aria-hidden={label ? undefined : 'true'}
@@ -44,13 +39,13 @@ const width = Math.round(size * RATIO);
 		display: block;
 		flex: none;
 		background: var(--color-accent);
-		-webkit-mask-image: url('/ilab.svg');
-		mask-image: url('/ilab.svg');
+		-webkit-mask-image: url('/favicon.svg');
+		mask-image: url('/favicon.svg');
 		-webkit-mask-size: contain;
 		mask-size: contain;
 		-webkit-mask-repeat: no-repeat;
 		mask-repeat: no-repeat;
-		-webkit-mask-position: left center;
-		mask-position: left center;
+		-webkit-mask-position: center;
+		mask-position: center;
 	}
 </style>
