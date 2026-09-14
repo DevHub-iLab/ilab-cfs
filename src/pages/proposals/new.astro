@@ -36,7 +36,7 @@ const ERRORS: Record<string, string> = {
 
 <Layout title="New proposal — iLab CFS">
 	<div class="flex min-h-full flex-col">
-		<SiteNav user={Astro.locals.user} current="proposals">
+		<SiteNav user={Astro.locals.user} current="proposals" cta={false}>
 			<span slot="status" class="text-[13px] text-muted">Not saved yet</span>
 		</SiteNav>
 

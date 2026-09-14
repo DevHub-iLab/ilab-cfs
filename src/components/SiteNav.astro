@@ -13,11 +13,17 @@ interface Props {
 	 * page laying itself out differently passes its own.
 	 */
 	align?: string;
+	/**
+	 * Whether to offer the call to action. Off on the page it leads to, where a
+	 * button pointing at where you already are is noise.
+	 */
+	cta?: boolean;
 }
 
 const {
 	user,
 	current,
+	cta = true,
 	align = 'max(var(--page-edge), calc((100% - 1060px) / 2 + var(--page-edge)))',
 } = Astro.props;
 
@@ -52,9 +58,6 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		<Wordmark size={20} />
 	</a>
 
-	{/* Page context — the editor's save state, say. Empty on most pages. */}
-	<slot name="status" />
-
 	{
 		links.map((link) => (
 			<a
@@ -82,9 +85,16 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		  place — pitching is — and a speaker who has just signed in is the one
 		  most likely to want it.
 		*/}
-		<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
-			Submit a proposal
-		</a>
+		{
+			cta && (
+				<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+					Submit a proposal
+				</a>
+			)
+		}
+
+		{/* Page context — the editor's save state, say. Empty on most pages. */}
+		<slot name="status" />
 
 		{
 			user && (
