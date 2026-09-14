@@ -1,7 +1,7 @@
 ---
 import { asc, gt, isNull, or, sql } from 'drizzle-orm';
 import Layout from '../../layouts/Layout.astro';
-import Wordmark from '../../components/Wordmark.astro';
+import SiteNav from '../../components/SiteNav.astro';
 import ProposalForm from '../../components/ProposalForm.astro';
 import { db } from '../../db';
 import { cfp } from '../../db/schema';
@@ -36,15 +36,9 @@ const ERRORS: Record<string, string> = {
 
 <Layout title="New proposal — iLab CFS">
 	<div class="flex min-h-full flex-col">
-		<header
-			class="nav page-x gap-[22px] py-[13px]"
-			style="--page-edge: clamp(24px, 5vw, 30px); border-bottom: 1px solid var(--color-divider);"
-		>
-			<a class="nav-brand text-[18px] no-underline" href="/" aria-label="iLab CFS — home">
-				<Wordmark />
-			</a>
-			<span class="ml-auto text-[13px] text-muted">Not saved yet</span>
-		</header>
+		<SiteNav user={Astro.locals.user} current="proposals">
+			<span slot="status" class="text-[13px] text-muted">Not saved yet</span>
+		</SiteNav>
 
 		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_300px]">
 			<div class="flex flex-col gap-[20px]">

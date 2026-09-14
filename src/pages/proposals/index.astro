@@ -1,7 +1,7 @@
 ---
 import { desc, eq, sql } from 'drizzle-orm';
 import Layout from '../../layouts/Layout.astro';
-import Wordmark from '../../components/Wordmark.astro';
+import SiteNav from '../../components/SiteNav.astro';
 import { db } from '../../db';
 import { cfp, proposal, type ProposalStatus } from '../../db/schema';
 
@@ -90,24 +90,7 @@ const error = Astro.url.searchParams.get('error');
 
 <Layout title="Your proposals — iLab CFS">
 	<div class="flex min-h-full flex-col">
-		<header
-			class="nav page-x gap-[22px] py-[13px]"
-			style="--page-edge: clamp(24px, 5vw, 26px); border-bottom: 1px solid var(--color-divider);"
-		>
-			<a class="nav-brand text-[18px] no-underline" href="/" aria-label="iLab CFS — home">
-				<Wordmark />
-			</a>
-			<a href="/proposals" aria-current="page">My proposals</a>
-			<a class="hidden sm:inline" href="/schedule">Schedule</a>
-			<a class="hidden sm:inline" href="/archive">Archive</a>
-			<span
-				class="ml-auto flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full text-[12px]"
-				style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
-				title={user.email}
-			>
-				{(user.name || user.email).trim().charAt(0).toUpperCase()}
-			</span>
-		</header>
+		<SiteNav user={user} current="proposals" />
 
 		<main class="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-[20px] px-[24px] pt-[32px] pb-[46px]">
 			<div class="flex flex-wrap items-end gap-[16px]">

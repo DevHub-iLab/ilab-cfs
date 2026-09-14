@@ -1,0 +1,173 @@
+---
+import Wordmark from './Wordmark.astro';
+import type { User } from '../lib/auth';
+
+interface Props {
+	/** From `Astro.locals.user`. Decides the links and the right-hand actions. */
+	user: User | null;
+	current?: 'proposals' | 'schedule' | 'archive';
+}
+
+const { user, current } = Astro.props;
+
+const links = [
+	// Only worth offering once there is something of yours to see.
+	...(user ? [{ href: '/proposals', label: 'My proposals', key: 'proposals' as const }] : []),
+	{ href: '/schedule', label: 'Schedule', key: 'schedule' as const },
+	{ href: '/archive', label: 'Archive', key: 'archive' as const },
+];
+
+const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase();
+---
+
+{/*
+  One masthead for every page.
+
+  The artboards vary it per screen — the editor's is stripped to a status and
+  two buttons, the speaker's list swaps the actions for an avatar — but varying
+  the chrome itself made moving between pages feel like moving between sites.
+  What stays is the frame: same height, same edges, same links, same behaviour.
+  What varies is only what must — which link is current, whether you are signed
+  in, and one slot of page context.
+
+  At rest it carries neither ground nor rule, so a page opens on an unbroken
+  hero; it frosts once the page moves underneath it.
+*/}
+<header
+	class="nav page-x gap-[22px] py-[13px]"
+	style="--page-edge: clamp(24px, 5vw, 30px);"
+	data-nav
+>
+	<a class="nav-brand text-[18px] no-underline" href="/" aria-label="iLab CFS — home">
+		<Wordmark />
+	</a>
+
+	{/* Page context — the editor's save state, say. Empty on most pages. */}
+	<slot name="status" />
+
+	{
+		links.map((link) => (
+			<a
+				class="hidden sm:inline"
+				href={link.href}
+				aria-current={current === link.key ? 'page' : undefined}
+			>
+				{link.label}
+			</a>
+		))
+	}
+
+	<div class="ml-auto flex items-center gap-[9px]">
+		{
+			user ? (
+				<span
+					class="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full text-[12px]"
+					style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
+					title={user.email}
+				>
+					{initial}
+				</span>
+			) : (
+				<>
+					<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
+						Sign in
+					</a>
+					<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+						Submit a proposal
+					</a>
+				</>
+			)
+		}
+	</div>
+</header>
+
+<style>
+	/*
+	  Unlayered on purpose: `.nav` lives in `@layer components`, and an
+	  unlayered rule beats every layered one outright, so none of this has to
+	  win a specificity argument with the component it is dressing.
+	*/
+	header {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+	}
+
+	/*
+	  The frost is a pseudo-element that fades in, rather than properties on the
+	  masthead that animate from their resting values. At rest it is not painted
+	  at all, so the masthead is genuinely nothing — no ground, no rule, and no
+	  identity `backdrop-filter` sitting there tinting the page through a
+	  compositing pass. It is also what keeps the rule from occupying a pixel of
+	  layout before it is visible: the box is taken out of flow.
+	*/
+	header::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		pointer-events: none;
+
+		opacity: 0;
+		transition: opacity 220ms ease;
+
+		/* The opaque ground is the default, not the fallback: a two-thirds
+		   transparent bar over scrolling text is unreadable, so legibility must
+		   not depend on a filter landing. The frost is layered over it below,
+		   where it can be painted. */
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-divider);
+	}
+
+	/*
+	  Prefixed first, standard last, and not the other way round: the CSS
+	  minifier treats the pair as one property and keeps the last one it sees,
+	  so authoring them in reverse silently ships WebKit's prefix alone and
+	  leaves Firefox translucent with nothing blurred behind it.
+	*/
+	@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+		header::before {
+			background: color-mix(in srgb, var(--color-bg) 68%, transparent);
+			-webkit-backdrop-filter: blur(16px) saturate(180%);
+			backdrop-filter: blur(16px) saturate(180%);
+		}
+	}
+
+	header[data-stuck]::before {
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		header::before {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	const header = document.querySelector<HTMLElement>('[data-nav]');
+
+	if (header) {
+		let stuck = false;
+
+		/*
+		  8px rather than 0: scroll restoration and a trackpad's rubber-banding
+		  both settle a pixel or two off zero, and a rule that flickers at rest
+		  is worse than one that arrives a moment late.
+
+		  The guard matters more than the threshold — `scroll` fires far more
+		  often than the state changes, and writing the attribute on every frame
+		  would invalidate style for no reason.
+		*/
+		const update = () => {
+			const next = window.scrollY > 8;
+			if (next === stuck) return;
+			stuck = next;
+			header.toggleAttribute('data-stuck', next);
+		};
+
+		// Run once: a reload can restore a scroll position well down the page.
+		update();
+		addEventListener('scroll', update, { passive: true });
+	}
+</script>
