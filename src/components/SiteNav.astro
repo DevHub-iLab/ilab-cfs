@@ -11,8 +11,6 @@ interface Props {
 const { user, current } = Astro.props;
 
 const links = [
-	// Only worth offering once there is something of yours to see.
-	...(user ? [{ href: '/proposals', label: 'My proposals', key: 'proposals' as const }] : []),
 	{ href: '/schedule', label: 'Schedule', key: 'schedule' as const },
 	{ href: '/archive', label: 'Archive', key: 'archive' as const },
 ];
@@ -60,13 +58,38 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 	<div class="ml-auto flex items-center gap-[9px]">
 		{
 			user ? (
-				<span
-					class="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full text-[12px]"
-					style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
-					title={user.email}
-				>
-					{initial}
-				</span>
+				<div class="relative" data-user-menu>
+					<button
+						type="button"
+						class="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-full border-0 text-[12px]"
+						style="background: var(--color-accent-800); box-shadow: inset 0 0 0 1px var(--color-accent-700); color: var(--color-accent-100);"
+						aria-label="Account menu"
+						aria-haspopup="menu"
+						aria-expanded="false"
+						aria-controls="user-menu"
+						title={user.email}
+						data-user-menu-button
+					>
+						<span aria-hidden="true">{initial}</span>
+					</button>
+
+					<div id="user-menu" class="user-menu" role="menu" aria-label="Account">
+						<span class="user-menu-who" role="presentation">{user.email}</span>
+						<a
+							class="user-menu-item"
+							role="menuitem"
+							href="/proposals"
+							aria-current={current === 'proposals' ? 'page' : undefined}
+						>
+							My proposals
+						</a>
+						<form method="post" action="/sign-out">
+							<button class="user-menu-item" role="menuitem" type="submit">
+								Sign out
+							</button>
+						</form>
+					</div>
+				</div>
 			) : (
 				<>
 					<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
@@ -79,6 +102,19 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 			)
 		}
 	</div>
+
+	{
+		user && (
+			<noscript>
+				<a href="/proposals">My proposals</a>
+				<form method="post" action="/sign-out" style="display: inline;">
+					<button class="btn btn-ghost" style="padding: 7px 12px;" type="submit">
+						Sign out
+					</button>
+				</form>
+			</noscript>
+		)
+	}
 </header>
 
 <style>
@@ -142,6 +178,92 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 			transition: none;
 		}
 	}
+
+	/*
+	  The menu is always laid out and never display:none — it is hidden with
+	  `visibility` instead. That is what makes the animation dependable: a box
+	  whose `display` flips cannot transition without `@starting-style` and
+	  `transition-behavior: allow-discrete`, which are recent enough to be worth
+	  not depending on. `visibility` animates discretely by definition, flipping
+	  at the start of the opening transition and the end of the closing one, so
+	  the fade is visible in both directions — and while hidden it is out of the
+	  accessibility tree and takes no clicks.
+	*/
+	.user-menu {
+		position: absolute;
+		top: calc(100% + 10px);
+		right: 0;
+		z-index: 1;
+
+		display: flex;
+		flex-direction: column;
+		min-width: 190px;
+		padding: var(--space-2);
+		border-radius: var(--radius-md);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-md);
+
+		opacity: 0;
+		visibility: hidden;
+		translate: 0 -6px;
+		scale: 0.97;
+		transform-origin: top right;
+		transition:
+			opacity 150ms ease,
+			translate 150ms ease,
+			scale 150ms ease,
+			visibility 150ms;
+	}
+
+	[data-user-menu][data-open] .user-menu {
+		opacity: 1;
+		visibility: visible;
+		translate: 0 0;
+		scale: 1;
+	}
+
+	.user-menu-who {
+		padding: 6px 10px 8px;
+		font-size: 11.5px;
+		color: color-mix(in srgb, var(--color-text) 50%, transparent);
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.user-menu form {
+		display: contents;
+	}
+
+	.user-menu-item {
+		display: block;
+		width: 100%;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		font: inherit;
+		font-size: 13.5px;
+		color: var(--color-text);
+		text-align: left;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.user-menu-item:hover,
+	.user-menu-item:focus-visible {
+		background: color-mix(in srgb, var(--color-text) 8%, transparent);
+		color: var(--color-accent);
+	}
+
+	.user-menu-item[aria-current='page'] {
+		color: var(--color-accent);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.user-menu {
+			transition: visibility 150ms;
+		}
+	}
 </style>
 
 <script>
@@ -169,5 +291,52 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		// Run once: a reload can restore a scroll position well down the page.
 		update();
 		addEventListener('scroll', update, { passive: true });
+	}
+
+	// ── account menu ──────────────────────────────────────────────────────
+	const menuRoot = document.querySelector<HTMLElement>('[data-user-menu]');
+	const menuButton = document.querySelector<HTMLButtonElement>('[data-user-menu-button]');
+	const menu = document.querySelector<HTMLElement>('#user-menu');
+
+	if (menuRoot && menuButton && menu) {
+		const items = () => [...menu.querySelectorAll<HTMLElement>('.user-menu-item')];
+
+		function setOpen(open: boolean, focusFirst = false) {
+			menuRoot!.toggleAttribute('data-open', open);
+			menuButton!.setAttribute('aria-expanded', String(open));
+			if (open && focusFirst) items()[0]?.focus();
+		}
+
+		const isOpen = () => menuRoot.hasAttribute('data-open');
+
+		menuButton.addEventListener('click', () => setOpen(!isOpen(), true));
+
+		// Anywhere outside closes it — including the rest of the masthead.
+		document.addEventListener('pointerdown', (event) => {
+			if (isOpen() && !menuRoot.contains(event.target as Node)) setOpen(false);
+		});
+
+        // Escape returns focus to the button, or a keyboard user is left
+        // standing on a menu that is no longer there.
+		document.addEventListener('keydown', (event) => {
+			if (event.key !== 'Escape' || !isOpen()) return;
+			setOpen(false);
+			menuButton.focus();
+		});
+
+		menu.addEventListener('keydown', (event) => {
+			if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+			event.preventDefault();
+			const list = items();
+			const here = list.indexOf(document.activeElement as HTMLElement);
+			const next = event.key === 'ArrowDown' ? here + 1 : here - 1;
+			list[(next + list.length) % list.length]?.focus();
+		});
+
+		// Tabbing past the last item is a deliberate exit, not a dismissal to
+		// fight — but the menu should not stay open behind you.
+		menu.addEventListener('focusout', (event) => {
+			if (!menuRoot.contains(event.relatedTarget as Node)) setOpen(false);
+		});
 	}
 </script>
