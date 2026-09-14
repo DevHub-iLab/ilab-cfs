@@ -70,7 +70,24 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 
 	<div class="ml-auto flex items-center gap-[9px] pr-[16px]">
 		{
-			user ? (
+			!user && (
+				<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
+					Sign in
+				</a>
+			)
+		}
+
+		{/*
+		  The call to action is for everyone. Signing in is not the point of the
+		  place — pitching is — and a speaker who has just signed in is the one
+		  most likely to want it.
+		*/}
+		<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+			Submit a proposal
+		</a>
+
+		{
+			user && (
 				<div class="relative" data-user-menu>
 					<button
 						type="button"
@@ -103,15 +120,6 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 						</form>
 					</div>
 				</div>
-			) : (
-				<>
-					<a class="btn btn-ghost" style="padding: 7px 12px;" href="/sign-in">
-						Sign in
-					</a>
-					<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
-						Submit a proposal
-					</a>
-				</>
 			)
 		}
 	</div>
