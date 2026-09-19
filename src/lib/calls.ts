@@ -60,6 +60,48 @@ export function takingSubmissions(now: Date) {
 	return and(isNull(cfp.deletedAt), or(isNull(cfp.closesAt), gt(cfp.closesAt, now)));
 }
 
+/**
+ * Which calls the admin's list is showing.
+ *
+ * A view is a URL rather than a scripted filter, so it is linkable, survives
+ * the redirect after every write, and needs no JavaScript — the same reason
+ * the rest of these screens are links and form posts. `all` is deliberately
+ * the live ones only: deleted calls are not a fourth of the set, they are a
+ * set you go and look at.
+ */
+export const CALL_VIEWS = ['all', 'open', 'closed', 'deleted'] as const;
+export type CallView = (typeof CALL_VIEWS)[number];
+
+/** Narrow an untrusted `show` to a view. Anything else is everything live. */
+export function readView(raw: string | null | undefined): CallView {
+	return (CALL_VIEWS as readonly string[]).includes(raw ?? '') ? (raw as CallView) : 'all';
+}
+
+/**
+ * A write endpoint's URL, carrying the view it was posted from.
+ *
+ * Without this a close from the Open list lands the admin back on All, having
+ * silently changed what they were looking at as well as the call.
+ */
+export function actionUrl(id: string, action: string, view: CallView): string {
+	return `/admin/calls/${id}/${action}${view === 'all' ? '' : `?show=${view}`}`;
+}
+
+/**
+ * Where a write sends the admin afterwards: the list, on the view they were
+ * on, with whatever it has to tell them.
+ *
+ * The view is read back off the request rather than trusted from a form field
+ * — it is only ever one of four known strings, and `readView` is what makes
+ * that true of anything that arrives here.
+ */
+export function backToCalls(request: Request, told: Record<string, string>): string {
+	const view = readView(new URL(request.url).searchParams.get('show'));
+	const query = new URLSearchParams(told);
+	if (view !== 'all') query.set('show', view);
+	return `/admin/calls?${query}`;
+}
+
 /** What an admin filled in. `closesAt: null` is a call that never closes. */
 export interface CallDraft {
 	name: string;

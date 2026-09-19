@@ -1,5 +1,6 @@
 ---
 import type { Cfp } from '../db/schema';
+import { actionUrl, type CallView } from '../lib/calls';
 
 interface Props {
 	call: Cfp;
@@ -7,9 +8,11 @@ interface Props {
 	proposals: number;
 	/** Open calls can be closed; closed ones are reopened by editing the date. */
 	isOpen: boolean;
+	/** Which list this card is in, so a write comes back to the same one. */
+	view: CallView;
 }
 
-const { call, proposals, isOpen } = Astro.props;
+const { call, proposals, isOpen, view } = Astro.props;
 
 /*
   Bootstrap Icons 1.13.1 (MIT), inlined rather than fetched. They are a third
@@ -64,7 +67,7 @@ const EVENODD = new Set([ICONS.pencil[1]]);
 			/* Closed calls have no close button: the deadline is already behind
 			   them, and moving it is an edit. */
 			isOpen && (
-				<form method="post" action={`/admin/calls/${call.id}/close`}>
+				<form method="post" action={actionUrl(call.id, 'close', view)}>
 					<button class="actions-item" type="submit">
 						<svg class="ic-solid" viewBox="0 0 16 16" aria-hidden="true">
 							<path d={ICONS.door[0]} />
@@ -81,7 +84,7 @@ const EVENODD = new Set([ICONS.pencil[1]]);
 		  moment this posts. A blocking dialog in front of a one-click undo
 		  buys nothing and costs everyone.
 		*/}
-		<form method="post" action={`/admin/calls/${call.id}/delete`}>
+		<form method="post" action={actionUrl(call.id, 'delete', view)}>
 			<button
 				class="actions-item actions-item-danger"
 				type="submit"

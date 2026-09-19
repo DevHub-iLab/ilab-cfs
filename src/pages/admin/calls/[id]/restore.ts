@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { restore } from '../../../../lib/calls';
+import { backToCalls, restore } from '../../../../lib/calls';
 
 export const prerender = false;
 
@@ -10,10 +10,10 @@ export const prerender = false;
  * deleted while open is taking submissions again the moment this returns, and
  * back on the homepage with it.
  */
-export const POST: APIRoute = async ({ params, locals, redirect }) => {
+export const POST: APIRoute = async ({ params, request, locals, redirect }) => {
 	if (locals.user?.role !== 'admin') return new Response('Forbidden', { status: 403 });
 
 	const done = await restore(params.id!);
 
-	return redirect(done ? '/admin/calls?restored=1' : '/admin/calls?error=restore');
+	return redirect(backToCalls(request, done ? { restored: '1' } : { error: 'restore' }));
 };

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { create, readCallForm } from '../../../lib/calls';
+import { backToCalls, create, readCallForm } from '../../../lib/calls';
 
 export const prerender = false;
 
@@ -8,15 +8,15 @@ export const prerender = false;
  * the blurb they wrote. None of it is sensitive — it is what they were about
  * to publish on the homepage.
  */
-function back(form: FormData, problem: string): string {
-	const params = new URLSearchParams({ error: problem });
+function back(request: Request, form: FormData, problem: string): string {
+	const told: Record<string, string> = { error: problem };
 
 	for (const field of ['name', 'track', 'description', 'kind', 'closes-at']) {
 		const value = String(form.get(field) ?? '').trim();
-		if (value) params.set(field, value);
+		if (value) told[field] = value;
 	}
 
-	return `/admin/calls?${params}`;
+	return backToCalls(request, told);
 }
 
 /**
@@ -35,9 +35,11 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
 	const form = await request.formData();
 	const read = readCallForm(form);
 
-	if ('problem' in read) return redirect(back(form, read.problem));
+	if ('problem' in read) return redirect(back(request, form, read.problem));
 
 	await create(read.call);
 
+	// Not the view they were on: a call is created open, and landing on Closed
+	// or Deleted would show them a list the new call is not in.
 	return redirect('/admin/calls?created=1');
 };

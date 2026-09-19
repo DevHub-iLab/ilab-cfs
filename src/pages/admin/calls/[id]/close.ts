@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { close } from '../../../../lib/calls';
+import { backToCalls, close } from '../../../../lib/calls';
 
 export const prerender = false;
 
@@ -11,10 +11,10 @@ export const prerender = false;
  * Nothing is deleted and nothing is reassigned: the proposals already pitched
  * to it stay where they were pitched.
  */
-export const POST: APIRoute = async ({ params, locals, redirect }) => {
+export const POST: APIRoute = async ({ params, request, locals, redirect }) => {
 	if (locals.user?.role !== 'admin') return new Response('Forbidden', { status: 403 });
 
 	const done = await close(params.id!);
 
-	return redirect(done ? '/admin/calls?closed=1' : '/admin/calls?error=close');
+	return redirect(backToCalls(request, done ? { closed: '1' } : { error: 'close' }));
 };

@@ -79,6 +79,11 @@ as of that moment and nothing else: what was already pitched to it is still read
 decided and edited. Closing twice is harmless and leaves the recorded closing
 time alone.
 
+The list shows the live calls in two sections, open then closed, and a
+segmented control above them filters to **All**, **Open**, **Closed** or
+**Deleted** with the count of each. Every view is its own URL (`?show=open`),
+so it can be linked and every action posts back to the view you were on.
+
 Each card's **⋮** menu holds the rest. **Edit** opens the call at
 `/admin/calls/<id>`, where every field of it can be changed — the track included,
 which re-labels every proposal pitched to it, since a proposal takes its track

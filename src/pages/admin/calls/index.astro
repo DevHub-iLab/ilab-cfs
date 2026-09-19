@@ -9,8 +9,11 @@ import { cfp, proposal, type Cfp } from '../../../db/schema';
 import {
 	BLANK_CALL,
 	CALL_PROBLEMS,
+	CALL_VIEWS,
 	TRACK_LABELS,
+	actionUrl,
 	echoed,
+	readView,
 	type CallProblem,
 } from '../../../lib/calls';
 
@@ -67,6 +70,41 @@ const deleted = rows
 	.filter((row) => row.call.deletedAt !== null)
 	.sort((a, b) => b.call.deletedAt!.getTime() - a.call.deletedAt!.getTime());
 
+/*
+  Which of the three the page is showing.
+
+  The filter is four links rather than a scripted control, so each view is a
+  URL: it can be linked, it survives the redirect after every write — every
+  action on a card posts back to the view it was on — and it works with no
+  JavaScript, like everything else on these screens.
+*/
+const view = readView(Astro.url.searchParams.get('show'));
+
+const VIEWS: Record<typeof view, { label: string; count: number }> = {
+	all: { label: 'All', count: live.length },
+	open: { label: 'Open', count: open.length },
+	closed: { label: 'Closed', count: closed.length },
+	// Counted even when it is zero, so the tab is a stable place rather than
+	// one that appears the first time something is deleted.
+	deleted: { label: 'Deleted', count: deleted.length },
+};
+
+const showing = {
+	open: view === 'all' || view === 'open',
+	closed: view === 'all' || view === 'closed',
+	deleted: view === 'deleted',
+};
+
+/** Said when the view the admin picked has nothing in it. */
+const NOTHING_HERE: Record<typeof view, string> = {
+	all: '',
+	open: 'Nothing is taking submissions, so the homepage is showing its empty state. Create a call, or reopen a closed one by moving its deadline.',
+	closed: 'No call has closed yet.',
+	deleted: 'Nothing has been deleted. Deleting a call hides it from everywhere else and leaves it here, restorable.',
+};
+const nothingHere =
+	view !== 'all' && VIEWS[view].count === 0 ? NOTHING_HERE[view] : null;
+
 /** Instants are stored UTC and read in Singapore time — the talks are local. */
 const stamp = new Intl.DateTimeFormat('en-GB', {
 	day: 'numeric',
@@ -88,11 +126,13 @@ const notice = params.has('created')
 	? 'Call created. It is on the homepage now, and open for submissions.'
 	: params.has('closed')
 		? 'Closed. Nothing new can be submitted to it — everything already in it is still yours to review.'
-		: params.has('deleted')
-			? 'Deleted. It is off the homepage and out of these lists — nothing is gone, and Restore below puts it back exactly as it was.'
-			: params.has('restored')
-				? 'Restored, in the state it was deleted in. If it was open, it is taking submissions again.'
-				: null;
+		: params.has('restored')
+			? 'Restored, in the state it was deleted in. If it was open, it is taking submissions again.'
+			: null;
+
+// Deleting is the one notice that has somewhere to point: the call has just
+// left whichever list the admin is looking at, and Deleted is where it went.
+const justDeleted = params.has('deleted');
 
 /*
   Two places for two kinds of refusal. Anything the new-call form got wrong is
@@ -132,13 +172,22 @@ const typed = echoed(params, BLANK_CALL);
 				</div>
 
 				{
-					notice && (
+					(notice || justDeleted) && (
 						<p
 							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
 							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
 							role="status"
 						>
-							{notice}
+							{justDeleted ? (
+								<>
+									Deleted. It is off the homepage and out of these lists —
+									nothing is gone, and it is in{' '}
+									<a href="/admin/calls?show=deleted">Deleted</a>, where Restore
+									puts it back exactly as it was.
+								</>
+							) : (
+								notice
+							)}
 						</p>
 					)
 				}
@@ -154,8 +203,31 @@ const typed = echoed(params, BLANK_CALL);
 					)
 				}
 
+				{/*
+				  Links, not radios: each view is a URL. `.seg` is the design's own
+				  segmented control — the canvas filters the reviewer pool with one —
+				  and the only thing it has to be taught here is that a link can be
+				  the selected option.
+				*/}
+				<nav class="seg self-start" aria-label="Which calls to show">
+					{
+						CALL_VIEWS.map((key) => (
+							<a
+								class="seg-opt"
+								href={key === 'all' ? '/admin/calls' : `/admin/calls?show=${key}`}
+								aria-current={view === key ? 'page' : undefined}
+							>
+								{VIEWS[key].label}
+								<span class="seg-count">{VIEWS[key].count}</span>
+							</a>
+						))
+					}
+				</nav>
+
+				{nothingHere && <p class="m-0 text-[13px] text-muted">{nothingHere}</p>}
+
 				{
-					rows.length === 0 && (
+					view === 'all' && rows.length === 0 && (
 						<div
 							class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
 							style="box-shadow: var(--shadow-sm);"
@@ -170,7 +242,7 @@ const typed = echoed(params, BLANK_CALL);
 				}
 
 				{
-					open.length > 0 && (
+					showing.open && open.length > 0 && (
 						<section class="flex flex-col gap-[10px]">
 							<div class="flex items-baseline gap-[12px]">
 								<h2 class="m-0 text-[20px]">Open</h2>
@@ -214,7 +286,7 @@ const typed = echoed(params, BLANK_CALL);
 									    change something on the spot, so both are POSTs — a link
 									    that changes something is a link a crawler can pull, and
 									    both are guarded again in SQL regardless. */}
-									<CallActions call={call} proposals={proposals} isOpen />
+									<CallActions call={call} proposals={proposals} isOpen view={view} />
 								</article>
 							))}
 						</section>
@@ -222,7 +294,7 @@ const typed = echoed(params, BLANK_CALL);
 				}
 
 				{
-					closed.length > 0 && (
+					showing.closed && closed.length > 0 && (
 						<section class="flex flex-col gap-[10px]">
 							<div class="flex items-baseline gap-[12px]">
 								<h2 class="m-0 text-[20px]">Closed</h2>
@@ -264,7 +336,7 @@ const typed = echoed(params, BLANK_CALL);
 
 									{/* The way back in: a closed call is renamed, or reopened, from
 									    the same screen its deadline is edited on. */}
-									<CallActions call={call} proposals={proposals} isOpen={false} />
+									<CallActions call={call} proposals={proposals} isOpen={false} view={view} />
 								</article>
 							))}
 						</section>
@@ -272,7 +344,7 @@ const typed = echoed(params, BLANK_CALL);
 				}
 
 				{
-					deleted.length > 0 && (
+					showing.deleted && deleted.length > 0 && (
 						<section class="flex flex-col gap-[10px]">
 							<div class="flex items-baseline gap-[12px]">
 								<h2 class="m-0 text-[20px]">Deleted</h2>
@@ -309,7 +381,7 @@ const typed = echoed(params, BLANK_CALL);
 									*/}
 									<form
 										method="post"
-										action={`/admin/calls/${call.id}/restore`}
+										action={actionUrl(call.id, 'restore', view)}
 										class="justify-self-start sm:justify-self-end"
 									>
 										<button class="btn btn-secondary" style="padding: 7px 12px;" type="submit">
@@ -349,25 +421,41 @@ const typed = echoed(params, BLANK_CALL);
 
 <style>
 	/*
-	  The date only matters to one of the two answers, so it is revealed by the
-	  answer rather than by script — `:has()` reading the radio beside it. With
-	  no JavaScript at all the control still works, and the server ignores the
-	  field when the call never closes.
-
-	  Where `:has()` is not supported the field simply stays visible, which is
-	  the same form one step less tidy rather than a broken one.
+	  `.seg` is built for radio inputs — the component layer rings the checked
+	  one with `:has(input:checked)`. These options are links, so the ring has
+	  to come from `aria-current` instead. Unlayered, so it beats both the
+	  component layer's `.seg-opt` and the base layer's accent `a` colour
+	  without a specificity argument.
 	*/
-	[data-when] .deadline {
-		display: none;
+	.seg-opt {
+		color: color-mix(in srgb, var(--color-text) 68%, transparent);
+		text-decoration: none;
+		transition: color 140ms ease;
 	}
 
-	[data-when]:has(input[value='deadline']:checked) .deadline {
-		display: block;
+	.seg-opt:hover {
+		color: var(--color-text);
 	}
 
-	@supports not selector(:has(*)) {
-		[data-when] .deadline {
-			display: block;
+	.seg-opt[aria-current='page'] {
+		color: var(--color-accent);
+		box-shadow: inset 0 0 0 1px var(--color-accent);
+	}
+
+	/*
+	  The count is the only way to know Deleted has anything in it without
+	  opening it, so it is always drawn — including as a zero, which is also
+	  what stops the tab row changing width as calls come and go.
+	*/
+	.seg-count {
+		margin-left: 6px;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.6;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.seg-opt {
+			transition: none;
 		}
 	}
 </style>
