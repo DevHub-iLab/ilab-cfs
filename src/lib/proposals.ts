@@ -1,5 +1,16 @@
 import { env } from 'cloudflare:workers';
-import { FORMATS, LEVELS, type Format, type Level } from '../db/schema';
+import { and, eq, exists, gt, inArray, is, isNull, or, sql, SQL } from 'drizzle-orm';
+import { SQLiteAsyncDialect } from 'drizzle-orm/sqlite-core';
+import { db } from '../db';
+import {
+	cfp,
+	proposal,
+	proposalRevision,
+	FORMATS,
+	LEVELS,
+	type Format,
+	type Level,
+} from '../db/schema';
 
 /**
  * Writing a proposal.
@@ -16,14 +27,37 @@ import { FORMATS, LEVELS, type Format, type Level } from '../db/schema';
  * not a failed one, so a batch cannot express "submit, but only if the call is
  * open". That is why submitting is two steps rather than one — see `submit()`.
  *
- * These go to the D1 binding directly rather than through Drizzle. Drizzle's
- * `db.batch()` only takes its own query builders — it reaches for a prepared
- * `stmt` that a raw `db.run(sql\`…\`)` never carries, and throws `Cannot read
- * properties of undefined (reading 'bind')` when handed one. The builders
- * cannot express `INSERT … SELECT … WHERE EXISTS`, which is the shape every
- * guard here needs, so the guarded writes use `env.DB` and reads stay on
- * Drizzle.
+ * **Why two kinds of statement live here.** Anything Drizzle can build, Drizzle
+ * builds: the column names are then checked against the schema and the values
+ * are named rather than counted, and a JSON column serialises itself.
+ *
+ * The two guarded inserts are the exception, and only for a specific reason.
+ * `db.insert(t).select(…)` does exist, but it emits the table's *entire* column
+ * list, so the select has to supply every column — including the ones with SQL
+ * defaults — and adding a column later breaks it. These inserts deliberately
+ * name a subset and let `status`, `created_at` and `updated_at` default, so they
+ * are written as `sql` templates instead.
+ *
+ * Those templates go to the binding rather than `db.batch()`, which takes only
+ * Drizzle's own builders: a raw `db.run(sql\`…\`)` executes immediately and
+ * returns a promise, not something batchable. `statement()` below lowers either
+ * kind to a D1 statement so a typed builder and a raw guard can share one batch.
  */
+
+const dialect = new SQLiteAsyncDialect();
+
+/**
+ * Lower a Drizzle query — a builder or a `sql` template — to a D1 statement.
+ *
+ * This is what lets the batched pairs mix the two: `env.DB.batch()` wants D1
+ * statements, and both kinds can be rendered to the same `{ sql, params }`.
+ * Values stay attached to the place they are used in either form, so there is
+ * no hand-ordered bind list to get wrong.
+ */
+function statement(query: SQL | { toSQL(): { sql: string; params: unknown[] } }) {
+	const { sql: text, params } = is(query, SQL) ? dialect.sqlToQuery(query) : query.toSQL();
+	return env.DB.prepare(text).bind(...params);
+}
 
 export interface ProposalContent {
 	title: string;
@@ -102,32 +136,29 @@ export function missingForSubmission(content: ProposalContent): string | null {
  * does what it reads like.
  */
 function insertRevision(proposalId: string, speakerId: string, c: ProposalContent) {
-	return env.DB.prepare(
-		`insert into proposal_revision
+	return statement(sql`
+		insert into ${proposalRevision}
 			(id, proposal_id, revision, title, abstract, format, level, topics, links, bio)
-		 select ?, ?,
-			coalesce((select max(revision) from proposal_revision where proposal_id = ?), 0) + 1,
-			?, ?, ?, ?, ?, ?, ?
-		 where exists (select 1 from proposal where id = ? and speaker_id = ?)`,
-	).bind(
-		crypto.randomUUID(),
-		proposalId,
-		proposalId,
-		c.title,
-		c.abstract,
-		c.format,
-		c.level,
-		JSON.stringify(c.topics),
-		JSON.stringify(c.links),
-		c.bio,
-		proposalId,
-		speakerId,
-	);
+		select
+			${crypto.randomUUID()},
+			${proposalId},
+			coalesce((select max(revision) from ${proposalRevision}
+			          where ${proposalRevision.proposalId} = ${proposalId}), 0) + 1,
+			${c.title}, ${c.abstract}, ${c.format}, ${c.level},
+			${JSON.stringify(c.topics)}, ${JSON.stringify(c.links)}, ${c.bio}
+		where exists (
+			select 1 from ${proposal}
+			where ${proposal.id} = ${proposalId} and ${proposal.speakerId} = ${speakerId}
+		)
+	`);
 }
 
-/** D1 reports affected rows on `meta.changes`. */
-function changed(result: D1Result): number {
-	return result.meta.changes ?? 0;
+/**
+ * D1 reports affected rows on `meta.changes`, and Drizzle passes its result
+ * through untouched, so one reader serves both kinds of statement.
+ */
+function changed(result: { meta?: { changes?: number } }): number {
+	return result?.meta?.changes ?? 0;
 }
 
 /**
@@ -146,27 +177,19 @@ export async function create(opts: {
 	const c = opts.content;
 
 	const [inserted] = await env.DB.batch([
-		env.DB.prepare(
-			`insert into proposal
+		statement(sql`
+			insert into ${proposal}
 				(id, cfp_id, speaker_id, title, abstract, format, level, topics, links, bio)
-			 select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-			 where exists (
-				select 1 from cfp where id = ? and (closes_at is null or closes_at > ?)
-			 )`,
-		).bind(
-			id,
-			opts.cfpId,
-			opts.speakerId,
-			c.title,
-			c.abstract,
-			c.format,
-			c.level,
-			JSON.stringify(c.topics),
-			JSON.stringify(c.links),
-			c.bio,
-			opts.cfpId,
-			now,
-		),
+			select
+				${id}, ${opts.cfpId}, ${opts.speakerId},
+				${c.title}, ${c.abstract}, ${c.format}, ${c.level},
+				${JSON.stringify(c.topics)}, ${JSON.stringify(c.links)}, ${c.bio}
+			where exists (
+				select 1 from ${cfp}
+				where ${cfp.id} = ${opts.cfpId}
+				  and (${cfp.closesAt} is null or ${cfp.closesAt} > ${now})
+			)
+		`),
 		insertRevision(id, opts.speakerId, c),
 	]);
 
@@ -189,22 +212,22 @@ export async function save(opts: {
 	const c = opts.content;
 
 	const [updated] = await env.DB.batch([
-		env.DB.prepare(
-			`update proposal set
-				title = ?, abstract = ?, format = ?, level = ?,
-				topics = ?, links = ?, bio = ?, updated_at = ?
-			 where id = ? and speaker_id = ?`,
-		).bind(
-			c.title,
-			c.abstract,
-			c.format,
-			c.level,
-			JSON.stringify(c.topics),
-			JSON.stringify(c.links),
-			c.bio,
-			Date.now(),
-			opts.id,
-			opts.speakerId,
+		// Built by Drizzle and lowered, so the column names are checked, the
+		// values are named, and `topics`/`links` serialise themselves.
+		// `updated_at` is set by the schema's `$onUpdate`.
+		statement(
+			db
+				.update(proposal)
+				.set({
+					title: c.title,
+					abstract: c.abstract,
+					format: c.format,
+					level: c.level,
+					topics: c.topics,
+					links: c.links,
+					bio: c.bio,
+				})
+				.where(and(eq(proposal.id, opts.id), eq(proposal.speakerId, opts.speakerId))),
 		),
 		insertRevision(opts.id, opts.speakerId, c),
 	]);
@@ -229,40 +252,49 @@ export async function submit(opts: {
 	id: string;
 	speakerId: string;
 }): Promise<{ ok: true } | { ok: false; reason: 'closed' | 'not-draft' }> {
-	const now = Date.now();
+	const now = new Date();
 
-	const result = await env.DB.prepare(
-		`update proposal set
-			status = 'submitted',
-			submitted_at = coalesce(submitted_at, ?),
-			updated_at = ?
-		 where id = ? and speaker_id = ? and status = 'draft'
-		   and exists (
-				select 1 from cfp
-				where cfp.id = proposal.cfp_id
-				  and (cfp.closes_at is null or cfp.closes_at > ?)
-		   )`,
-	)
-		.bind(now, now, opts.id, opts.speakerId, now)
-		.run();
+	const result = await db
+		.update(proposal)
+		.set({
+			status: 'submitted',
+			// First crossing only: a resubmission never moves the original date.
+			submittedAt: sql`coalesce(${proposal.submittedAt}, ${now.getTime()})`,
+		})
+		.where(
+			and(
+				eq(proposal.id, opts.id),
+				eq(proposal.speakerId, opts.speakerId),
+				eq(proposal.status, 'draft'),
+				exists(
+					db
+						.select({ open: sql`1` })
+						.from(cfp)
+						.where(
+							and(
+								eq(cfp.id, proposal.cfpId),
+								or(isNull(cfp.closesAt), gt(cfp.closesAt, now)),
+							),
+						),
+				),
+			),
+		);
 
 	if (changed(result) === 1) return { ok: true };
 
 	// Only to word the message. The decision was already made above, in SQL —
 	// this cannot change it, and a call closing between the two reads at worst
 	// gives a right refusal a slightly wrong explanation.
-	const open = await env.DB.prepare(
-		`select exists (
-			select 1 from cfp
-			join proposal on proposal.cfp_id = cfp.id
-			where proposal.id = ?
-			  and (cfp.closes_at is null or cfp.closes_at > ?)
-		 ) as open`,
-	)
-		.bind(opts.id, now)
-		.first<{ open: number }>();
+	const [stillOpen] = await db
+		.select({ id: cfp.id })
+		.from(cfp)
+		.innerJoin(proposal, eq(proposal.cfpId, cfp.id))
+		.where(
+			and(eq(proposal.id, opts.id), or(isNull(cfp.closesAt), gt(cfp.closesAt, now))),
+		)
+		.limit(1);
 
-	return { ok: false, reason: open?.open ? 'not-draft' : 'closed' };
+	return { ok: false, reason: stillOpen ? 'not-draft' : 'closed' };
 }
 
 /**
@@ -275,12 +307,16 @@ export async function submit(opts: {
  * to take back.
  */
 export async function withdraw(opts: { id: string; speakerId: string }): Promise<boolean> {
-	const result = await env.DB.prepare(
-		`update proposal set status = 'withdrawn', updated_at = ?
-		 where id = ? and speaker_id = ? and status in ('submitted', 'accepted')`,
-	)
-		.bind(Date.now(), opts.id, opts.speakerId)
-		.run();
+	const result = await db
+		.update(proposal)
+		.set({ status: 'withdrawn' })
+		.where(
+			and(
+				eq(proposal.id, opts.id),
+				eq(proposal.speakerId, opts.speakerId),
+				inArray(proposal.status, ['submitted', 'accepted']),
+			),
+		);
 
 	return changed(result) === 1;
 }
@@ -295,11 +331,15 @@ export async function withdraw(opts: { id: string; speakerId: string }): Promise
  * needed and none can be missed.
  */
 export async function remove(opts: { id: string; speakerId: string }): Promise<boolean> {
-	const result = await env.DB.prepare(
-		`delete from proposal where id = ? and speaker_id = ? and status = 'draft'`,
-	)
-		.bind(opts.id, opts.speakerId)
-		.run();
+	const result = await db
+		.delete(proposal)
+		.where(
+			and(
+				eq(proposal.id, opts.id),
+				eq(proposal.speakerId, opts.speakerId),
+				eq(proposal.status, 'draft'),
+			),
+		);
 
 	/*
 	  `> 0`, not `=== 1`, and only here.
