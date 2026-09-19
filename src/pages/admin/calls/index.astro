@@ -4,6 +4,7 @@ import Layout from '../../../layouts/Layout.astro';
 import SiteNav from '../../../components/SiteNav.astro';
 import { db } from '../../../db';
 import CallActions from '../../../components/CallActions.astro';
+import Notice from '../../../components/Notice.astro';
 import CallForm from '../../../components/CallForm.astro';
 import { cfp, proposal, type Cfp } from '../../../db/schema';
 import {
@@ -173,35 +174,21 @@ const typed = echoed(params, BLANK_CALL);
 
 				{
 					(notice || justDeleted) && (
-						<p
-							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
-							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
-							role="status"
-						>
+						<Notice keep={['show']}>
 							{justDeleted ? (
 								<>
-									Deleted. It is off the homepage and out of these lists —
-									nothing is gone, and it is in{' '}
-									<a href="/admin/calls?show=deleted">Deleted</a>, where Restore
-									puts it back exactly as it was.
+									Deleted. It is off the homepage and out of these lists — nothing
+									is gone, and it is in{' '}
+									<a href="/admin/calls?show=deleted">Deleted</a>, where Restore puts
+									it back exactly as it was.
 								</>
 							) : (
 								notice
 							)}
-						</p>
+						</Notice>
 					)
 				}
-				{
-					pageError && (
-						<p
-							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
-							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
-							role="alert"
-						>
-							{pageError}
-						</p>
-					)
-				}
+				{pageError && <Notice tone="alert" keep={['show']}>{pageError}</Notice>}
 
 				{/*
 				  Links, not radios: each view is a URL. `.seg` is the design's own

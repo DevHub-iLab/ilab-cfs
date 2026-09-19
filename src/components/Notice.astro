@@ -1,0 +1,112 @@
+---
+interface Props {
+	/**
+	 * `status` for something that went through, `alert` for a refusal. It
+	 * picks the ring colour and the live-region role a screen reader announces
+	 * it with — polite for one, assertive for the other.
+	 */
+	tone?: 'status' | 'alert';
+	/**
+	 * Query parameters to keep when the message is dismissed. Everything else
+	 * goes, because a notice is a one-shot thing a redirect put in the URL —
+	 * `?created=1`, `?error=close` — while a parameter like `show` says what
+	 * the reader is looking at and has to survive.
+	 */
+	keep?: string[];
+}
+
+const { tone = 'status', keep = [] } = Astro.props;
+
+/*
+  Dismissing is a link to this same page without the message on it.
+
+  That is what the message *is*: a parameter a redirect added. Removing it is
+  the honest undo, it needs no script, and it leaves a URL worth reloading or
+  sharing. The script below only spares the round trip.
+*/
+const dismissed = new URL(Astro.url);
+for (const key of [...dismissed.searchParams.keys()]) {
+	if (!keep.includes(key)) dismissed.searchParams.delete(key);
+}
+const dismissTo = dismissed.pathname + dismissed.search;
+
+const RING = tone === 'alert' ? '#f6a6a6' : 'var(--color-accent)';
+---
+
+<p
+	class="notice m-0 flex items-start gap-[12px] rounded-[8px] py-[12px] pr-[10px] pl-[16px] text-[13px]"
+	style={`background: var(--color-surface); box-shadow: inset 0 0 0 1px ${RING};${tone === 'alert' ? ' color: #f6a6a6;' : ''}`}
+	role={tone === 'alert' ? 'alert' : 'status'}
+	data-notice
+>
+	<span><slot /></span>
+
+	<a class="notice-x" href={dismissTo} aria-label="Dismiss this message" data-dismiss>
+		<svg viewBox="0 0 256 256" aria-hidden="true">
+			<path
+				d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"
+			></path>
+		</svg>
+	</a>
+</p>
+
+<style>
+	/*
+	  `color: inherit` rather than a colour of its own: the ✕ then reads as
+	  part of the message it closes, muted red on a refusal and plain text on a
+	  notice, without this component knowing which it is twice.
+	*/
+	.notice-x {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: none;
+		width: 22px;
+		height: 22px;
+		margin-left: auto;
+		border-radius: var(--radius-sm);
+		color: inherit;
+		text-decoration: none;
+		opacity: 0.5;
+		transition: opacity 140ms ease, background 140ms ease;
+	}
+
+	.notice-x:hover,
+	.notice-x:focus-visible {
+		opacity: 1;
+		background: color-mix(in srgb, currentColor 14%, transparent);
+	}
+
+	.notice-x svg {
+		display: block;
+		width: 11px;
+		height: 11px;
+		fill: currentColor;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.notice-x {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	/*
+	  Enhancement only — the ✕ is a link, and following it drops the message
+	  the slow way. This removes the element instead and rewrites the address
+	  bar to where that link pointed, so a reload does not resurrect the
+	  message and Back does not either: `replaceState` leaves no entry to go
+	  back to.
+	*/
+	for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-dismiss]')) {
+		link.addEventListener('click', (event) => {
+			// A modified click is someone opening it in a tab on purpose.
+			if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+
+			event.preventDefault();
+			history.replaceState(history.state, '', link.getAttribute('href')!);
+			link.closest<HTMLElement>('[data-notice]')?.remove();
+		});
+	}
+</script>
