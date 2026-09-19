@@ -4,7 +4,7 @@ Innovation Lab @ NTU CCDS call for speakers platform — one place where speaker
 
 Astro 7 on Cloudflare Workers · D1 (Drizzle) · R2 · KV · Better Auth · Resend.
 
-> **Status:** early, but the speaker's half works. Someone can sign in, write a pitch, submit it, keep editing it and withdraw it. Nobody can answer them yet — the reviewer and admin screens, and the `event` and `review` tables behind them, are still to be built. `docs/intent.md` is the source of truth for what this is and why it is shaped this way — read it before designing anything.
+> **Status:** early, but the speaker's half works and an admin can open and close calls. Someone can sign in, write a pitch, submit it, keep editing it and withdraw it. Nobody can answer them yet — the reviewer screens, the rest of the admin console, and the `event` and `review` tables behind them are still to be built. `docs/intent.md` is the source of truth for what this is and why it is shaped this way — read it before designing anything.
 
 ## Prerequisites
 
@@ -64,12 +64,23 @@ pnpm exec wrangler d1 execute ilab-cfs --local \
 
 Access is enforced in middleware by route prefix (`/admin` needs admin, `/review` needs reviewer, `/proposals` and `/account` need any signed-in user), so a new page under one of those is protected the moment it is created. Signed out you get redirected to `/sign-in`; signed in without the role you get a 403. A 404 means the guard let you through and the page simply doesn't exist yet.
 
+Once you are an admin, **Manage calls** appears in the account menu and `/admin/calls` is the only admin screen that exists so far.
+
 ## Seeing an open call locally
 
 The landing page renders whatever `cfp` rows are open — `closes_at IS NULL` for a
 continuous call, a future `closes_at` for an event-specific one. A fresh database
-has none, so the page correctly shows its empty state. There is no admin UI for
-creating calls yet, so seed a few by hand:
+has none, so the page correctly shows its empty state.
+
+Make one at **`/admin/calls`** as an admin: name it, pick a track, and either give
+it a deadline (in Singapore time — the field is read as SGT, not as the Worker's
+UTC) or set it to never close. **Close now** on an open call stops new submissions
+as of that moment and nothing else: what was already pitched to it is still read,
+decided and edited. Closing twice is harmless and leaves the recorded closing
+time alone.
+
+Seeding by hand is still the quickest way to fill a fresh database, and the only
+way before anyone is an admin:
 
 ```bash
 pnpm exec wrangler d1 execute ilab-cfs --local --command "
@@ -82,7 +93,8 @@ INSERT INTO cfp (id, name, track, description, closes_at) VALUES
 
 `track` is one of `techtalks`, `devhub`, `catalyst`. Closing a call is setting
 `closes_at` to a past instant — there is no status column, and the page's filter
-is the same predicate the submission guard runs.
+is the same predicate the submission guard runs. Note these instants are UTC
+milliseconds; the screens render them in Singapore time.
 
 ## Poking at the data
 

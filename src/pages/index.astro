@@ -3,7 +3,8 @@ import { asc, gt, isNull, or, sql } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
 import SiteNav from '../components/SiteNav.astro';
 import { db } from '../db';
-import { cfp, type Track } from '../db/schema';
+import { cfp } from '../db/schema';
+import { TRACK_LABELS } from '../lib/calls';
 
 /**
  * The front door reads the open calls out of D1 on every request, so this
@@ -26,12 +27,6 @@ const openCalls = await db
 	.from(cfp)
 	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
 	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
-
-const TRACK_LABELS: Record<Track, string> = {
-	techtalks: 'TechTalks',
-	devhub: 'DevHub',
-	catalyst: 'Catalyst',
-};
 
 /**
  * Instants are stored UTC and rendered in Singapore time — the talks are local.

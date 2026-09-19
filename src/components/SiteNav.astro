@@ -5,7 +5,7 @@ import type { User } from '../lib/auth';
 interface Props {
 	/** From `Astro.locals.user`. Decides the links and the right-hand actions. */
 	user: User | null;
-	current?: 'proposals' | 'schedule' | 'archive';
+	current?: 'proposals' | 'schedule' | 'archive' | 'admin';
 	/**
 	 * Where this page's own content column starts, as a CSS length. The links
 	 * line up with it, so the masthead reads as part of the page rather than a
@@ -123,6 +123,22 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 						>
 							My proposals
 						</a>
+						{/*
+						  The one way into the admin screens, so it is here rather than in
+						  the links beside the brand: every other reader of this masthead is
+						  a speaker, and a link four fifths of them get a 403 from is worse
+						  than one more item in the menu of the people who don't.
+						*/}
+						{user.role === 'admin' && (
+							<a
+								class="user-menu-item"
+								role="menuitem"
+								href="/admin/calls"
+								aria-current={current === 'admin' ? 'page' : undefined}
+							>
+								Manage calls
+							</a>
+						)}
 						<form method="post" action="/sign-out">
 							<button class="user-menu-item" role="menuitem" type="submit">
 								Sign out
@@ -138,6 +154,7 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		user && (
 			<noscript>
 				<a href="/proposals">My proposals</a>
+				{user.role === 'admin' && <a href="/admin/calls">Manage calls</a>}
 				<form method="post" action="/sign-out" style="display: inline;">
 					<button class="btn btn-ghost" style="padding: 7px 12px;" type="submit">
 						Sign out

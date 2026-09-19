@@ -1,0 +1,389 @@
+---
+import { asc, eq, sql } from 'drizzle-orm';
+import Layout from '../../../layouts/Layout.astro';
+import SiteNav from '../../../components/SiteNav.astro';
+import { db } from '../../../db';
+import { cfp, proposal, TRACKS, type Cfp, type Track } from '../../../db/schema';
+import { TRACK_LABELS, sgtWallClock } from '../../../lib/calls';
+
+/**
+ * The only screen that decides what speakers can pitch to.
+ *
+ * Reads the calls and their proposal counts per request, so it cannot be
+ * prerendered — and middleware has already required an admin to be here, since
+ * the rule is on the `/admin` prefix rather than on this page.
+ */
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/sign-in?redirect=/admin/calls');
+
+const now = new Date();
+
+/**
+ * Every call, with what is sitting in it.
+ *
+ * The counts are the point of showing closed calls at all: a closed call with
+ * undecided proposals in it is the committee's backlog, and intent asks for
+ * that to be a glance rather than a query someone remembers to run. The join
+ * is left, so a call nobody has pitched to counts zero rather than vanishing.
+ */
+const rows = await db
+	.select({
+		call: cfp,
+		proposals: sql<number>`count(${proposal.id})`,
+		undecided: sql<number>`sum(case when ${proposal.status} = 'submitted' then 1 else 0 end)`,
+	})
+	.from(cfp)
+	.leftJoin(proposal, eq(proposal.cfpId, cfp.id))
+	.groupBy(cfp.id)
+	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
+
+const isOpen = (call: Cfp) => call.closesAt === null || call.closesAt > now;
+
+/*
+  One query, two lists. Open calls want the soonest deadline first with the
+  continuous ones after — which is the order the query already produces, and
+  the same order the homepage shows them in. Closed calls want the opposite,
+  most recently closed first, so they are reversed rather than asked for again.
+*/
+const open = rows.filter((row) => isOpen(row.call));
+const closed = rows.filter((row) => !isOpen(row.call)).reverse();
+
+/** Instants are stored UTC and read in Singapore time — the talks are local. */
+const stamp = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	year: 'numeric',
+	hour: 'numeric',
+	minute: '2-digit',
+	timeZone: 'Asia/Singapore',
+});
+
+/**
+ * The earliest deadline the picker will offer — now, on Singapore's wall
+ * clock rather than the Worker's UTC one. Written with the same helper that
+ * reads the field back, so the two cannot drift. A hint only: a past deadline
+ * is refused again on the server, where it counts.
+ */
+const nowInSgt = sgtWallClock(now);
+
+function daysLeft(closesAt: Date): string {
+	const days = Math.floor((closesAt.getTime() - now.getTime()) / 86_400_000);
+	return days <= 0 ? 'under a day left' : `${days} days left`;
+}
+
+const params = Astro.url.searchParams;
+
+const notice = params.has('created')
+	? 'Call created. It is on the homepage now, and open for submissions.'
+	: params.has('closed')
+		? 'Closed. Nothing new can be submitted to it — everything already in it is still yours to review.'
+		: null;
+
+const ERRORS: Record<string, string> = {
+	name: 'Give the call a name. It is what a speaker picks between, so make it say which month or which kind of session it is.',
+	track: 'Pick a track.',
+	closes:
+		'Pick a date and time for the deadline — or set the call to never close, if that is what it is.',
+	past: 'That deadline has already passed, so the call would be shut the moment it opened.',
+	close: 'That call was already closed. Its closing time is left as it was.',
+};
+const error = params.get('error');
+
+/*
+  A refused form comes back with what was typed, so a missed deadline field
+  does not cost an admin the name and the blurb they wrote above it. Nothing
+  here is sensitive — it is what they are about to publish on the homepage.
+*/
+const typed = {
+	name: params.get('name') ?? '',
+	track: ((TRACKS as readonly string[]).includes(params.get('track') ?? '')
+		? params.get('track')
+		: TRACKS[0]) as Track,
+	description: params.get('description') ?? '',
+	closesAt: params.get('closes-at') ?? '',
+};
+// Deadline is the default: it is the common case, and an admin who means a
+// call to run forever should have to say so rather than get one by omission.
+const continuous = params.get('kind') === 'continuous';
+---
+
+<Layout title="Calls — iLab CFS">
+	<div class="flex min-h-full flex-col">
+		<SiteNav user={user} current="admin" cta={false} />
+
+		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_320px]">
+			<div class="flex flex-col gap-[20px]">
+				<div>
+					<h1 class="m-0 mb-[5px] text-[32px]">Calls</h1>
+					<p class="m-0 max-w-[58ch] text-[14px] text-muted">
+						A call takes submissions until it closes. Closing one stops that and
+						nothing else — what is already in it is still read, still decided, still
+						scheduled, and still editable by the speaker who wrote it.
+					</p>
+				</div>
+
+				{
+					notice && (
+						<p
+							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
+							role="status"
+						>
+							{notice}
+						</p>
+					)
+				}
+				{
+					error && (
+						<p
+							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
+							role="alert"
+						>
+							{ERRORS[error] ?? ERRORS.close}
+						</p>
+					)
+				}
+
+				{
+					rows.length === 0 && (
+						<div
+							class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
+							style="box-shadow: var(--shadow-sm);"
+						>
+							<span style="font: 500 16px var(--font-heading);">No calls yet</span>
+							<span class="text-[13px] text-muted">
+								Until one exists the homepage shows its empty state and there is
+								nothing for a speaker to submit to. The form makes the first one.
+							</span>
+						</div>
+					)
+				}
+
+				{
+					open.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Open</h2>
+								<span class="text-[12px] text-muted">Taking submissions now.</span>
+							</div>
+
+							{open.map(({ call, proposals, undecided }) => (
+								<article
+									class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+									style="box-shadow: var(--shadow-sm);"
+								>
+									<div class="flex flex-col gap-[5px]">
+										<div class="flex flex-wrap items-center gap-[9px]">
+											<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+											{call.closesAt ? (
+												<span class="text-[12px] text-muted">
+													Closes {stamp.format(call.closesAt)} SGT ·{' '}
+													{daysLeft(call.closesAt)}
+												</span>
+											) : (
+												<span class="text-[12px] text-muted">
+													Never closes — a continuous call
+												</span>
+											)}
+										</div>
+
+										<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+										{call.description && (
+											<span class="text-[13px] text-muted">{call.description}</span>
+										)}
+
+										<span class="text-[12.5px] text-muted">
+											{proposals === 0
+												? 'Nothing pitched to it yet.'
+												: `${proposals} pitched · ${undecided} undecided`}
+										</span>
+									</div>
+
+									{/*
+									  A POST, not a link: it changes something, and a link that
+									  changes something is a link a crawler can pull. The window
+									  is guarded again in SQL regardless.
+									*/}
+									<form
+										method="post"
+										action={`/admin/calls/${call.id}/close`}
+										class="justify-self-start sm:justify-self-end"
+									>
+										<button class="btn btn-secondary" style="padding: 7px 12px;" type="submit">
+											Close now
+										</button>
+									</form>
+								</article>
+							))}
+						</section>
+					)
+				}
+
+				{
+					closed.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Closed</h2>
+								<span class="text-[12px] text-muted">
+									Not an archive — proposals in these are still live.
+								</span>
+							</div>
+
+							{closed.map(({ call, proposals, undecided }) => (
+								<article
+									class="flex flex-col gap-[5px] rounded-[8px] px-[17px] py-[15px]"
+									style="box-shadow: var(--shadow-sm); opacity: 0.82;"
+								>
+									<div class="flex flex-wrap items-center gap-[9px]">
+										<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+										<span class="text-[12px] text-muted">
+											Closed {stamp.format(call.closesAt!)} SGT
+										</span>
+									</div>
+
+									<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+									<span class="text-[12.5px] text-muted">
+										{proposals === 0 ? (
+											'Nothing was pitched to it.'
+										) : undecided > 0 ? (
+											<>
+												{proposals} pitched ·{' '}
+												<span style="color: var(--color-accent);">
+													{undecided} still undecided
+												</span>
+											</>
+										) : (
+											`${proposals} pitched · all decided`
+										)}
+									</span>
+								</article>
+							))}
+						</section>
+					)
+				}
+			</div>
+
+			<aside
+				class="flex flex-col gap-[16px] self-start rounded-[8px] p-[22px]"
+				style="background: var(--color-surface);"
+			>
+				<div>
+					<div style="font: 500 14px var(--font-heading);" class="mb-[6px]">New call</div>
+					<p class="m-0 text-[12px] leading-relaxed text-muted">
+						It appears on the homepage as soon as you create it. The track cannot be
+						changed afterwards, and neither can the call a proposal was pitched to.
+					</p>
+				</div>
+
+				<form method="post" action="/admin/calls/create" class="flex flex-col gap-[14px]">
+					<div class="field">
+						<label for="name">Name</label>
+						<input
+							class="input"
+							id="name"
+							name="name"
+							value={typed.name}
+							maxlength="120"
+							placeholder="October TechTalk"
+							required
+						/>
+					</div>
+
+					<div class="field">
+						<label for="track-0">Track</label>
+						<div class="seg w-full">
+							{
+								TRACKS.map((track, i) => (
+									<label class="seg-opt flex-1 justify-center">
+										<input
+											type="radio"
+											id={i === 0 ? 'track-0' : undefined}
+											name="track"
+											value={track}
+											checked={typed.track === track}
+										/>
+										{TRACK_LABELS[track]}
+									</label>
+								))
+							}
+						</div>
+					</div>
+
+					<div class="field">
+						<label for="description">Blurb <span class="text-muted">· optional</span></label>
+						<textarea class="input" id="description" name="description" style="min-height: 64px;"
+							>{typed.description}</textarea
+						>
+						<p class="m-0 mt-[5px] text-[11px] text-muted">
+							The line under the name on the homepage. What the slots are, who they're
+							for.
+						</p>
+					</div>
+
+					<div class="field" data-when>
+						<label>Deadline</label>
+						<div class="seg w-full">
+							<label class="seg-opt flex-1 justify-center">
+								<input type="radio" name="kind" value="deadline" checked={!continuous} />
+								Closes on
+							</label>
+							<label class="seg-opt flex-1 justify-center">
+								<input type="radio" name="kind" value="continuous" checked={continuous} />
+								Never closes
+							</label>
+						</div>
+
+						<div class="deadline mt-[10px]">
+							<input
+								class="input"
+								type="datetime-local"
+								name="closes-at"
+								value={typed.closesAt}
+								min={nowInSgt}
+								aria-label="Closes on"
+							/>
+							<p class="m-0 mt-[5px] text-[11px] text-muted">
+								Singapore time. Submissions stop at that instant; everything already
+								in the call carries on.
+							</p>
+						</div>
+					</div>
+
+					<button class="btn btn-primary btn-block" style="padding: 9px;" type="submit">
+						Create call
+					</button>
+				</form>
+			</aside>
+		</main>
+	</div>
+</Layout>
+
+<style>
+	/*
+	  The date only matters to one of the two answers, so it is revealed by the
+	  answer rather than by script — `:has()` reading the radio beside it. With
+	  no JavaScript at all the control still works, and the server ignores the
+	  field when the call never closes.
+
+	  Where `:has()` is not supported the field simply stays visible, which is
+	  the same form one step less tidy rather than a broken one.
+	*/
+	[data-when] .deadline {
+		display: none;
+	}
+
+	[data-when]:has(input[value='deadline']:checked) .deadline {
+		display: block;
+	}
+
+	@supports not selector(:has(*)) {
+		[data-when] .deadline {
+			display: block;
+		}
+	}
+</style>

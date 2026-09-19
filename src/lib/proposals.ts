@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { and, eq, exists, gt, inArray, is, isNull, or, sql, SQL } from 'drizzle-orm';
 import { SQLiteAsyncDialect } from 'drizzle-orm/sqlite-core';
-import { db } from '../db';
+import { changed, db } from '../db';
 import {
 	cfp,
 	proposal,
@@ -151,14 +151,6 @@ function insertRevision(proposalId: string, speakerId: string, c: ProposalConten
 			where ${proposal.id} = ${proposalId} and ${proposal.speakerId} = ${speakerId}
 		)
 	`);
-}
-
-/**
- * D1 reports affected rows on `meta.changes`, and Drizzle passes its result
- * through untouched, so one reader serves both kinds of statement.
- */
-function changed(result: { meta?: { changes?: number } }): number {
-	return result?.meta?.changes ?? 0;
 }
 
 /**

@@ -45,13 +45,17 @@ Two pnpm details that will otherwise waste your time:
 
 ## Current state
 
-Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp`, `proposal` and `proposal_revision` tables, and the speaker's half of the product — `/sign-in`, the homepage, `/proposals`, `/proposals/new` and the proposal editor at `/proposals/<id>`, with sign-out.
+Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp`, `proposal` and `proposal_revision` tables, and the speaker's half of the product — `/sign-in`, the homepage, `/proposals`, `/proposals/new` and the proposal editor at `/proposals/<id>`, with sign-out. On the admin side, `/admin/calls` opens and closes calls.
 
-A speaker can sign in, write a pitch, submit it, keep editing it, withdraw it and delete a draft. Nobody can answer them yet.
+A speaker can sign in, write a pitch, submit it, keep editing it, withdraw it and delete a draft, and an admin decides what there is to pitch to. Nobody can answer them yet.
 
-Not yet built: the R2 binding, the `event`, `review`, `attachment`, `audit_log` and `notification` tables, and every screen for a reviewer or an admin. `/review`, `/admin`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404 — middleware guards the first two by prefix, so signed-out visitors are redirected to sign-in and only then meet the 404.
+Not yet built: the R2 binding, the `event`, `review`, `attachment`, `audit_log` and `notification` tables, every reviewer screen, and the rest of the admin console — deciding, scheduling and the two chase lists of artboard 1f. `/review`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404; `/review` is guarded by prefix, so a signed-out visitor is redirected to sign-in and only then meets the 404. `/admin` itself redirects to `/admin/calls`, which is the only admin screen there is.
 
-**There is no admin UI for creating a call**, so a local database has no open calls, the homepage shows its empty state, and `/proposals/new` has nothing to submit to. Seed `cfp` rows by hand — the README has the SQL. This is the first thing standing between the lab and using any of this.
+**Calls are opened and closed at `/admin/calls`** — the screen that stood between the lab and using any of this, since with no `cfp` row the homepage shows its empty state and `/proposals/new` has nothing to submit to. It has no design of its own: artboard 1f draws the console's nav with a *Calls* link and never the screen behind it, so this is built in the same language rather than from a picture.
+
+Getting the first admin is still a hand-written `UPDATE user SET role='admin'` — roles cannot be self-declared, and there is no screen for granting them. The README has that line, and keeps the seeding SQL for a database with no admin in it yet.
+
+**Closing is `UPDATE cfp SET closes_at = now` and nothing else.** There is no status column and `src/lib/calls.ts` explains why one would only disagree with the deadline beside it. Two things in there are easy to get wrong from memory: the guard `closes_at is null or closes_at > now` is what stops a double-submitted form rewriting when a call shut, and a `datetime-local` posts a bare wall clock, so the `+08:00` is what keeps a deadline typed as 11:59pm from being stored as 7:59am SGT on a Worker whose local zone is UTC.
 
 Two screens are built from the design canvas minus what they cannot read. The homepage (artboard 4a) omits four bands that need `event` and `proposal` aggregates: the hero's proposal count, the stat band, "Next up" and "Recently on stage". The speaker's list (1d) omits the scheduled talk's card and its deck ask, the comment counts, and the reviewer's line on a rejected pitch. All were left out rather than filled with the design's sample figures, which would state invented numbers as fact. Each is a self-contained addition once the tables exist.
 
