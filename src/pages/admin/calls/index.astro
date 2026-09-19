@@ -50,13 +50,22 @@ const rows = await db
 const isOpen = (call: Cfp) => call.closesAt === null || call.closesAt > now;
 
 /*
-  One query, two lists. Open calls want the soonest deadline first with the
-  continuous ones after — which is the order the query already produces, and
-  the same order the homepage shows them in. Closed calls want the opposite,
-  most recently closed first, so they are reversed rather than asked for again.
+  One query, three lists. This is the only screen that reads deleted calls at
+  all — everywhere else runs `takingSubmissions()`, which excludes them — so
+  the query asks for everything and the sorting happens here.
+
+  Open calls want the soonest deadline first with the continuous ones after,
+  which is the order the query already produces and the order the homepage
+  shows them in. Closed calls want the opposite, most recently closed first, so
+  they are reversed rather than asked for again. Deleted ones are ordered by
+  when they were deleted, which no `cfp` ordering gives.
 */
-const open = rows.filter((row) => isOpen(row.call));
-const closed = rows.filter((row) => !isOpen(row.call)).reverse();
+const live = rows.filter((row) => row.call.deletedAt === null);
+const open = live.filter((row) => isOpen(row.call));
+const closed = live.filter((row) => !isOpen(row.call)).reverse();
+const deleted = rows
+	.filter((row) => row.call.deletedAt !== null)
+	.sort((a, b) => b.call.deletedAt!.getTime() - a.call.deletedAt!.getTime());
 
 /** Instants are stored UTC and read in Singapore time — the talks are local. */
 const stamp = new Intl.DateTimeFormat('en-GB', {
@@ -80,8 +89,10 @@ const notice = params.has('created')
 	: params.has('closed')
 		? 'Closed. Nothing new can be submitted to it — everything already in it is still yours to review.'
 		: params.has('deleted')
-			? 'Call deleted. Nothing had been pitched to it, so nothing went with it.'
-			: null;
+			? 'Deleted. It is off the homepage and out of these lists — nothing is gone, and Restore below puts it back exactly as it was.'
+			: params.has('restored')
+				? 'Restored, in the state it was deleted in. If it was open, it is taking submissions again.'
+				: null;
 
 /*
   Two places for two kinds of refusal. Anything the new-call form got wrong is
@@ -92,7 +103,8 @@ const notice = params.has('created')
 const PAGE_ERRORS: Record<string, string> = {
 	close: 'That call was already closed. Its closing time is left as it was.',
 	delete:
-		'That call was not deleted. Something has been pitched to it since the page was drawn, and a call that has been pitched to is closed rather than removed.',
+		'That call was not deleted. Something has been pitched to it since the page was drawn, and a call that has been pitched to is closed rather than hidden.',
+	restore: 'That call was already back. Nothing changed.',
 };
 
 const error = params.get('error');
@@ -253,6 +265,57 @@ const typed = echoed(params, BLANK_CALL);
 									{/* The way back in: a closed call is renamed, or reopened, from
 									    the same screen its deadline is edited on. */}
 									<CallActions call={call} proposals={proposals} isOpen={false} />
+								</article>
+							))}
+						</section>
+					)
+				}
+
+				{
+					deleted.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Deleted</h2>
+								<span class="text-[12px] text-muted">
+									Hidden, not gone. Restoring puts one back as it was.
+								</span>
+							</div>
+
+							{deleted.map(({ call }) => (
+								<article
+									class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+									style="box-shadow: inset 0 0 0 1px var(--color-divider); opacity: 0.66;"
+								>
+									<div class="flex flex-col gap-[5px]">
+										<div class="flex flex-wrap items-center gap-[9px]">
+											<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+											<span class="text-[12px] text-muted">
+												Deleted {stamp.format(call.deletedAt!)} SGT
+											</span>
+										</div>
+
+										<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+										<span class="text-[12.5px] text-muted">
+											{call.closesAt
+												? `Comes back closed — its deadline was ${stamp.format(call.closesAt)} SGT.`
+												: 'Comes back open, and back on the homepage.'}
+										</span>
+									</div>
+
+									{/*
+									  One action, so no menu: a kebab hiding a single item is a
+									  click spent on finding the click.
+									*/}
+									<form
+										method="post"
+										action={`/admin/calls/${call.id}/restore`}
+										class="justify-self-start sm:justify-self-end"
+									>
+										<button class="btn btn-secondary" style="padding: 7px 12px;" type="submit">
+											Restore
+										</button>
+									</form>
 								</article>
 							))}
 						</section>

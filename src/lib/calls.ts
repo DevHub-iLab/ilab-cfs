@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
 import { changed, db } from '../db';
 import { cfp, proposal, TRACKS, type Cfp, type Track } from '../db/schema';
 
@@ -19,11 +19,17 @@ import { cfp, proposal, TRACKS, type Cfp, type Track } from '../db/schema';
  * there is no second row to keep in step, and there will not be one until
  * `audit_log` exists.
  *
- * Only `close()` carries a guard. Editing is unconditional, for the reason
- * `save()` in `proposals.ts` gives: an edit has no window to lose and no state
- * to move through, so the only thing left to assert is that the row was there,
- * which the change count already says. Two admins editing at once is last
- * write wins, which is what a form is.
+ * Editing is unguarded beyond the row still being there and not deleted, for
+ * the reason `save()` in `proposals.ts` gives: an edit has no window to lose
+ * and no state to move through. Two admins editing at once is last write wins,
+ * which is what a form is.
+ *
+ * **Deleting is soft, and is the only write here that hides a row.** Nothing
+ * removes a `cfp`: `remove()` stamps `deleted_at` and `restore()` clears it,
+ * so a mis-click costs a click. The cost is that every other query has to say
+ * it wants live calls, which is what `takingSubmissions()` is for — one
+ * predicate, used by the homepage, the submit page and the insert's own guard,
+ * so a screen cannot forget half of it.
  */
 
 /**
@@ -35,6 +41,24 @@ export const TRACK_LABELS: Record<Track, string> = {
 	devhub: 'DevHub',
 	catalyst: 'Catalyst',
 };
+
+/**
+ * What a speaker may see and submit to.
+ *
+ * Two clauses, and every reader needs both: a call is live while it has not
+ * been deleted, and open while it has no deadline or its deadline is still
+ * ahead. They are here rather than written out per page because the second
+ * one used to be the whole predicate — a page copied from before the first
+ * clause existed would go on advertising deleted calls, and nothing would
+ * error.
+ *
+ * It is a Drizzle condition, so it drops into a builder's `where` and
+ * interpolates into a raw `sql` template alike — which is what lets the
+ * guarded insert in `proposals.ts` run the same test the homepage filters on.
+ */
+export function takingSubmissions(now: Date) {
+	return and(isNull(cfp.deletedAt), or(isNull(cfp.closesAt), gt(cfp.closesAt, now)));
+}
 
 /** What an admin filled in. `closesAt: null` is a call that never closes. */
 export interface CallDraft {
@@ -261,48 +285,67 @@ export async function update(id: string, draft: CallDraft): Promise<boolean> {
 			description: draft.description,
 			closesAt: draft.closesAt,
 		})
-		.where(eq(cfp.id, id));
+		.where(and(eq(cfp.id, id), isNull(cfp.deletedAt)));
 
-	// No guard beyond the id, so zero rows means no such call — the only thing
-	// an edit can fail on. `updated_at` is the schema's `$onUpdate`.
+	// Zero rows means no such call, or one that has been deleted — an edit has
+	// nothing else to fail on. Restoring is the way back to editing it.
+	// `updated_at` is the schema's `$onUpdate`.
 	return changed(result) === 1;
 }
 
 /**
- * Delete a call nobody has pitched to.
+ * Hide a call nobody has pitched to.
  *
- * The `not exists` is the whole safety of this, and it travels in the
- * statement rather than sitting in a check before it for the usual reason: a
- * proposal arriving between a read and a delete would otherwise take its call
- * out from under it.
+ * Soft: the row stays and `deleted_at` is stamped, so `restore()` is the whole
+ * undo and no `DELETE` is ever issued against `cfp`. What goes away is the
+ * call's presence — the homepage, the submit page and the admin's own open and
+ * closed lists all stop seeing it, and no new proposal can name it.
  *
- * There is no cascade to lean on, deliberately. `proposal.cfp_id` references
- * this row with no `on delete`, so D1 refuses rather than taking the proposals
- * with it — which is the right end state, since a pitch must not be silently
- * erased along with the call it was made to. A constraint error is a poor way
- * to say so, though, so the guard answers first and the foreign key is only
- * the backstop.
+ * **Still only an empty call**, even though nothing is destroyed any more. The
+ * reason changed rather than went away: a deleted call with proposals in it
+ * would leave those pitches pointing at something the committee can no longer
+ * see or decide on, while their authors go on reading the call's name in their
+ * own list. Hiding the container of live work is its own kind of loss.
  *
- * Nothing else is deletable. A call that has been pitched to is closed, not
- * removed: closing stops submissions and leaves the record of what was offered
- * to which event standing, which is the whole reason proposals are never
- * reassigned.
+ * The `not exists` travels in the statement, so a proposal arriving between a
+ * read and this write cannot have its call vanish underneath it. `deleted_at
+ * is null` makes a second click harmless and keeps the first deletion's
+ * instant, the same reasoning as `close()`.
  */
 export async function remove(id: string): Promise<boolean> {
 	const result = await db
-		.delete(cfp)
+		.update(cfp)
+		.set({ deletedAt: new Date() })
 		.where(
 			and(
 				eq(cfp.id, id),
+				isNull(cfp.deletedAt),
 				notExists(
 					db.select({ one: sql`1` }).from(proposal).where(eq(proposal.cfpId, id)),
 				),
 			),
 		);
 
-	// Exactly one, and no cascade counting to allow for: the only rows that
-	// could follow this one out are the proposals this statement refuses to
-	// delete in the first place.
+	return changed(result) === 1;
+}
+
+/**
+ * Put a deleted call back.
+ *
+ * It returns in the state it left in: `closes_at` was never touched, so a call
+ * deleted while closed comes back closed, and one deleted while open comes
+ * back taking submissions — and back on the homepage, which is the part worth
+ * pausing over before clicking it.
+ *
+ * `deleted_at is not null` is the guard, so restoring a call that is already
+ * live changes nothing rather than stamping `updated_at` for no reason.
+ */
+export async function restore(id: string): Promise<boolean> {
+	const result = await db
+		.update(cfp)
+		.set({ deletedAt: null })
+		.where(and(eq(cfp.id, id), isNotNull(cfp.deletedAt)));
+
 	return changed(result) === 1;
 }
 
@@ -326,7 +369,7 @@ export async function close(id: string): Promise<boolean> {
 	const result = await db
 		.update(cfp)
 		.set({ closesAt: now })
-		.where(and(eq(cfp.id, id), or(isNull(cfp.closesAt), gt(cfp.closesAt, now))));
+		.where(and(eq(cfp.id, id), takingSubmissions(now)));
 
 	return changed(result) === 1;
 }

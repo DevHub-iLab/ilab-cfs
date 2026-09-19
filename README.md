@@ -79,13 +79,20 @@ as of that moment and nothing else: what was already pitched to it is still read
 decided and edited. Closing twice is harmless and leaves the recorded closing
 time alone.
 
-**Edit** opens the call at `/admin/calls/<id>`, where every field of it can be
-changed — the track included, which re-labels every proposal pitched to it, since
-a proposal takes its track from its call. The deadline is the only thing that
-decides whether a call is open, so that page is also where one is extended,
-reopened (move the date forward, or switch to *never closes*) or closed as of a
-date you choose. What no edit can do is move a proposal between calls: those stay
-where they were pitched.
+Each card's **⋮** menu holds the rest. **Edit** opens the call at
+`/admin/calls/<id>`, where every field of it can be changed — the track included,
+which re-labels every proposal pitched to it, since a proposal takes its track
+from its call. The deadline is the only thing that decides whether a call is
+open, so that page is also where one is extended, reopened (move the date
+forward, or switch to *never closes*) or closed as of a date you choose. What no
+edit can do is move a proposal between calls: those stay where they were pitched.
+
+**Delete** is soft. The row stays and `deleted_at` is stamped, so the call drops
+off the homepage, out of `/proposals/new` and out of the open and closed lists,
+and turns up in a **Deleted** section with a **Restore** that puts it back exactly
+as it was. Only an empty call can be deleted: with pitches in it the menu item is
+disabled, because hiding the call would hide them from the committee while their
+authors go on seeing it. Close it instead.
 
 Seeding by hand is still the quickest way to fill a fresh database, and the only
 way before anyone is an admin:

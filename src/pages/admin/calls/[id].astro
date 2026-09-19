@@ -1,5 +1,5 @@
 ---
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import Layout from '../../../layouts/Layout.astro';
 import SiteNav from '../../../components/SiteNav.astro';
 import CallForm from '../../../components/CallForm.astro';
@@ -35,10 +35,13 @@ const [row] = await db
 	})
 	.from(cfp)
 	.leftJoin(proposal, eq(proposal.cfpId, cfp.id))
-	.where(eq(cfp.id, id!))
+	.where(and(eq(cfp.id, id!), isNull(cfp.deletedAt)))
 	.groupBy(cfp.id)
 	.limit(1);
 
+// A deleted call is not editable and not found — restoring it on the calls
+// list is the way back to this page, and the only thing that could be done
+// here otherwise is edit something nobody can see.
 if (!row) return new Response('Not found', { status: 404 });
 
 const { call, proposals, undecided } = row;

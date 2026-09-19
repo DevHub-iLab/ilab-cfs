@@ -75,11 +75,13 @@ const EVENODD = new Set([ICONS.pencil[1]]);
 			)
 		}
 
-		<form
-			method="post"
-			action={`/admin/calls/${call.id}/delete`}
-			data-confirm={`Delete “${call.name}”? Nothing has been pitched to it, so nothing else goes with it — but this cannot be undone.`}
-		>
+		{/*
+		  No confirmation step, deliberately: deleting is soft and the calls
+		  list grows a Deleted section with a Restore beside the call the
+		  moment this posts. A blocking dialog in front of a one-click undo
+		  buys nothing and costs everyone.
+		*/}
+		<form method="post" action={`/admin/calls/${call.id}/delete`}>
 			<button
 				class="actions-item actions-item-danger"
 				type="submit"
@@ -100,7 +102,7 @@ const EVENODD = new Set([ICONS.pencil[1]]);
 			proposals > 0 && (
 				<span class="actions-note" id={`no-delete-${call.id}`}>
 					{proposals === 1 ? 'One pitch is in this call' : `${proposals} pitches are in this call`} —
-					a call that has been pitched to is closed, not deleted.
+					hiding it would hide them from the committee too. Close it instead.
 				</span>
 			)
 		}
@@ -275,17 +277,4 @@ const EVENODD = new Set([ICONS.pencil[1]]);
 		open.open = false;
 		open.querySelector('summary')?.focus();
 	});
-
-	/*
-	  The one destructive action on these screens, and the only one with no
-	  undo — a closed call can be reopened, a deleted one is gone. `confirm()`
-	  is blunt, but it is the only dialog that works before any of this script
-	  has decided to run, and the statement behind it refuses anything that
-	  would take a proposal with it regardless.
-	*/
-	for (const form of document.querySelectorAll<HTMLFormElement>('form[data-confirm]')) {
-		form.addEventListener('submit', (event) => {
-			if (!confirm(form.dataset.confirm)) event.preventDefault();
-		});
-	}
 </script>

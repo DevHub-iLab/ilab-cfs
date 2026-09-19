@@ -1,10 +1,10 @@
 ---
-import { asc, gt, isNull, or, sql } from 'drizzle-orm';
+import { asc, sql } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
 import SiteNav from '../components/SiteNav.astro';
 import { db } from '../db';
 import { cfp } from '../db/schema';
-import { TRACK_LABELS } from '../lib/calls';
+import { TRACK_LABELS, takingSubmissions } from '../lib/calls';
 
 /**
  * The front door reads the open calls out of D1 on every request, so this
@@ -17,15 +17,16 @@ export const prerender = false;
 const now = new Date();
 
 /**
- * "Open" is `closes_at IS NULL OR closes_at > now` — the same predicate the
- * submission guard runs in SQL, and the reason the table needs no `status`
- * column. Ordering puts deadlines first, soonest to latest, and leaves the
- * continuous calls underneath in the order they were created.
+ * `takingSubmissions()` is the same predicate the submission guard runs in
+ * SQL — not deleted, and either no deadline or one still ahead — which is the
+ * reason the table needs no `status` column. Ordering puts deadlines first,
+ * soonest to latest, and leaves the continuous calls underneath in the order
+ * they were created.
  */
 const openCalls = await db
 	.select()
 	.from(cfp)
-	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
+	.where(takingSubmissions(now))
 	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
 
 /**

@@ -1,0 +1,1 @@
+ALTER TABLE `cfp` ADD `deleted_at` integer;

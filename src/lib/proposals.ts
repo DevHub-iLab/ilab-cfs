@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
-import { and, eq, exists, gt, inArray, is, isNull, or, sql, SQL } from 'drizzle-orm';
+import { and, eq, exists, inArray, is, sql, SQL } from 'drizzle-orm';
 import { SQLiteAsyncDialect } from 'drizzle-orm/sqlite-core';
 import { changed, db } from '../db';
+import { takingSubmissions } from './calls';
 import {
 	cfp,
 	proposal,
@@ -165,7 +166,7 @@ export async function create(opts: {
 	content: ProposalContent;
 }): Promise<{ id: string } | { error: 'closed' }> {
 	const id = crypto.randomUUID();
-	const now = Date.now();
+	const now = new Date();
 	const c = opts.content;
 
 	const [inserted] = await env.DB.batch([
@@ -178,8 +179,7 @@ export async function create(opts: {
 				${JSON.stringify(c.topics)}, ${JSON.stringify(c.links)}, ${c.bio}
 			where exists (
 				select 1 from ${cfp}
-				where ${cfp.id} = ${opts.cfpId}
-				  and (${cfp.closesAt} is null or ${cfp.closesAt} > ${now})
+				where ${cfp.id} = ${opts.cfpId} and ${takingSubmissions(now)}
 			)
 		`),
 		insertRevision(id, opts.speakerId, c),
@@ -262,12 +262,7 @@ export async function submit(opts: {
 					db
 						.select({ open: sql`1` })
 						.from(cfp)
-						.where(
-							and(
-								eq(cfp.id, proposal.cfpId),
-								or(isNull(cfp.closesAt), gt(cfp.closesAt, now)),
-							),
-						),
+						.where(and(eq(cfp.id, proposal.cfpId), takingSubmissions(now))),
 				),
 			),
 		);
@@ -281,9 +276,7 @@ export async function submit(opts: {
 		.select({ id: cfp.id })
 		.from(cfp)
 		.innerJoin(proposal, eq(proposal.cfpId, cfp.id))
-		.where(
-			and(eq(proposal.id, opts.id), or(isNull(cfp.closesAt), gt(cfp.closesAt, now))),
-		)
+		.where(and(eq(proposal.id, opts.id), takingSubmissions(now)))
 		.limit(1);
 
 	return { ok: false, reason: stillOpen ? 'not-draft' : 'closed' };
