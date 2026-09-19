@@ -1,0 +1,151 @@
+---
+import { TRACKS } from '../db/schema';
+import { TRACK_LABELS, sgtWallClock, type CallFormValues } from '../lib/calls';
+
+interface Props {
+	/** Where the form posts. Both write endpoints take the same field names. */
+	action: string;
+	values: CallFormValues;
+	/** The button's words — what this form does, not what it is. */
+	submit: string;
+	/**
+	 * Editing an existing call rather than opening a new one. It decides two
+	 * things, both about the deadline: whether one already past is a legal
+	 * answer, and what the line under the field says.
+	 */
+	editing?: boolean;
+	error?: string;
+}
+
+const { action, values, submit, editing = false, error } = Astro.props;
+
+/*
+  The picker is floored at now when creating, where a past deadline is a typo
+  the server will refuse anyway — and deliberately not when editing, where a
+  past deadline is what every closed call already has. A `min` there would make
+  the browser refuse to submit the form until the date was moved, so correcting
+  a closed call's name would mean changing its deadline to do it.
+*/
+const min = editing ? undefined : sgtWallClock(new Date());
+---
+
+<form method="post" action={action} class="flex flex-col gap-[14px]">
+	{
+		error && (
+			<p
+				class="m-0 rounded-[8px] px-[14px] py-[11px] text-[12.5px]"
+				style="background: var(--color-bg); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
+				role="alert"
+			>
+				{error}
+			</p>
+		)
+	}
+
+	<div class="field">
+		<label for="name">Name</label>
+		<input
+			class="input"
+			id="name"
+			name="name"
+			value={values.name}
+			maxlength="120"
+			placeholder="October TechTalk"
+			required
+		/>
+	</div>
+
+	<div class="field">
+		<label for="track-0">Track</label>
+		<div class="seg w-full">
+			{
+				TRACKS.map((track, i) => (
+					<label class="seg-opt flex-1 justify-center">
+						<input
+							type="radio"
+							id={i === 0 ? 'track-0' : undefined}
+							name="track"
+							value={track}
+							checked={values.track === track}
+						/>
+						{TRACK_LABELS[track]}
+					</label>
+				))
+			}
+		</div>
+	</div>
+
+	<div class="field">
+		<label for="description">Blurb <span class="text-muted">· optional</span></label>
+		<textarea class="input" id="description" name="description" style="min-height: 64px;"
+			>{values.description}</textarea
+		>
+		<p class="m-0 mt-[5px] text-[11px] text-muted">
+			The line under the name on the homepage. What the slots are, who they're for.
+		</p>
+	</div>
+
+	<div class="field" data-when>
+		<label>Deadline</label>
+		<div class="seg w-full">
+			<label class="seg-opt flex-1 justify-center">
+				<input type="radio" name="kind" value="deadline" checked={values.kind === 'deadline'} />
+				Closes on
+			</label>
+			<label class="seg-opt flex-1 justify-center">
+				<input
+					type="radio"
+					name="kind"
+					value="continuous"
+					checked={values.kind === 'continuous'}
+				/>
+				Never closes
+			</label>
+		</div>
+
+		<div class="deadline mt-[10px]">
+			<input
+				class="input"
+				type="datetime-local"
+				name="closes-at"
+				value={values.closesAt}
+				min={min}
+				aria-label="Closes on"
+			/>
+			<p class="m-0 mt-[5px] text-[11px] text-muted">
+				{
+					editing
+						? 'Singapore time. A date already past means the call closed then — move it forward, or switch to never closes, to take submissions again.'
+						: 'Singapore time. Submissions stop at that instant; everything already in the call carries on.'
+				}
+			</p>
+		</div>
+	</div>
+
+	<button class="btn btn-primary btn-block" style="padding: 9px;" type="submit">{submit}</button>
+</form>
+
+<style>
+	/*
+	  The date only matters to one of the two answers, so it is revealed by the
+	  answer rather than by script — `:has()` reading the radio beside it. With
+	  no JavaScript at all the control still works, and the server ignores the
+	  field when the call never closes.
+
+	  Where `:has()` is not supported the field simply stays visible, which is
+	  the same form one step less tidy rather than a broken one.
+	*/
+	[data-when] .deadline {
+		display: none;
+	}
+
+	[data-when]:has(input[value='deadline']:checked) .deadline {
+		display: block;
+	}
+
+	@supports not selector(:has(*)) {
+		[data-when] .deadline {
+			display: block;
+		}
+	}
+</style>

@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { changed, db } from '../db';
-import { cfp, TRACKS, type Track } from '../db/schema';
+import { cfp, TRACKS, type Cfp, type Track } from '../db/schema';
 
 /**
  * Opening and closing calls.
@@ -12,12 +12,18 @@ import { cfp, TRACKS, type Track } from '../db/schema';
  * the two kinds of call differ only in whether it is set at all. A separate
  * `status` could only ever disagree with the deadline sitting beside it.
  *
- * Both writes are one statement with an assertion on `meta.changes`, the same
+ * Every write is one statement with an assertion on `meta.changes`, the same
  * shape as `proposals.ts` and for the same reason: D1 runs in auto-commit and
  * has no interactive transactions, so a guard has to travel with the statement
- * it guards rather than sitting in a read before it. Neither needs `batch()` —
+ * it guards rather than sitting in a read before it. None needs `batch()` —
  * there is no second row to keep in step, and there will not be one until
  * `audit_log` exists.
+ *
+ * Only `close()` carries a guard. Editing is unconditional, for the reason
+ * `save()` in `proposals.ts` gives: an edit has no window to lose and no state
+ * to move through, so the only thing left to assert is that the row was there,
+ * which the change count already says. Two admins editing at once is last
+ * write wins, which is what a form is.
  */
 
 /**
@@ -38,8 +44,79 @@ export interface CallDraft {
 	closesAt: Date | null;
 }
 
-/** Why a submitted form was refused. The page words each one. */
+/** Why a submitted form was refused. */
 export type CallProblem = 'name' | 'track' | 'closes' | 'past';
+
+/** One wording per refusal, so both screens say the same thing. */
+export const CALL_PROBLEMS: Record<CallProblem, string> = {
+	name: 'Give the call a name. It is what a speaker picks between, so make it say which month or which kind of session it is.',
+	track: 'Pick a track.',
+	closes: 'Pick a date and time for the deadline — or set the call to never close, if that is what it is.',
+	past: 'That deadline has already passed, so the call would be shut the moment it opened.',
+};
+
+/**
+ * The form's own shape — what the fields hold, rather than what gets written.
+ *
+ * It differs from `CallDraft` in the two places a form differs from a row:
+ * the deadline is the wall clock the input speaks rather than an instant, and
+ * `kind` is a question the row answers with a null.
+ */
+export interface CallFormValues {
+	name: string;
+	track: Track;
+	description: string;
+	kind: 'deadline' | 'continuous';
+	closesAt: string;
+}
+
+/**
+ * A blank form.
+ *
+ * `deadline` rather than `continuous` is the default on purpose: a call that
+ * runs forever should be something an admin says, not something they get by
+ * leaving a field alone — and a deadline is the common case anyway.
+ */
+export const BLANK_CALL: CallFormValues = {
+	name: '',
+	track: TRACKS[0],
+	description: '',
+	kind: 'deadline',
+	closesAt: '',
+};
+
+/** An existing call, as the form holds it. */
+export function callValues(call: Cfp): CallFormValues {
+	return {
+		name: call.name,
+		track: call.track,
+		description: call.description ?? '',
+		kind: call.closesAt ? 'deadline' : 'continuous',
+		closesAt: call.closesAt ? sgtWallClock(call.closesAt) : '',
+	};
+}
+
+/**
+ * What was typed, over what was there.
+ *
+ * A refused form comes back through the query string, so a missed deadline
+ * field does not cost an admin the name and the blurb they wrote above it.
+ * Nothing in it is sensitive — it is what they were about to publish on the
+ * homepage. With no fields echoed, which is every other way of arriving, this
+ * is the base untouched.
+ */
+export function echoed(params: URLSearchParams, base: CallFormValues): CallFormValues {
+	const track = params.get('track');
+	const kind = params.get('kind');
+
+	return {
+		name: params.get('name') ?? base.name,
+		track: (TRACKS as readonly string[]).includes(track ?? '') ? (track as Track) : base.track,
+		description: params.get('description') ?? base.description,
+		kind: kind === 'continuous' || kind === 'deadline' ? kind : base.kind,
+		closesAt: params.get('closes-at') ?? base.closesAt,
+	};
+}
 
 const WALL_CLOCK = new Intl.DateTimeFormat('sv-SE', {
 	dateStyle: 'short',
@@ -102,8 +179,19 @@ function parseSgt(local: string): Date | null {
  * A missing or unrecognised `kind` falls through to requiring a date, which
  * fails loudly. The other way round, an unreadable field would quietly mint a
  * call that never closes and that nobody asked for.
+ *
+ * `allowPast` is what separates the two screens. Creating a call already shut
+ * is a typo — it would take no submissions and never reach the homepage. On an
+ * existing call a past deadline is an ordinary answer: it is what every closed
+ * call in the list has, so refusing it would mean a closed call's name could
+ * never be corrected. Moving one forward, or switching to never closes, is
+ * then how a call reopens — the deadline is the only thing that decides it, so
+ * it needs no button of its own.
  */
-export function readCallForm(form: FormData): { call: CallDraft } | { problem: CallProblem } {
+export function readCallForm(
+	form: FormData,
+	{ allowPast = false }: { allowPast?: boolean } = {},
+): { call: CallDraft } | { problem: CallProblem } {
 	const name = String(form.get('name') ?? '').trim();
 	if (!name || name.length > 120) return { problem: 'name' };
 
@@ -123,9 +211,7 @@ export function readCallForm(form: FormData): { call: CallDraft } | { problem: C
 	const closesAt = parseSgt(String(form.get('closes-at') ?? ''));
 	if (!closesAt) return { problem: 'closes' };
 
-	// A call created already shut would take no submissions and never appear on
-	// the homepage — it is a typo, not a request.
-	if (closesAt.getTime() <= Date.now()) return { problem: 'past' };
+	if (!allowPast && closesAt.getTime() <= Date.now()) return { problem: 'past' };
 
 	return { call: { ...draft, closesAt } };
 }
@@ -149,6 +235,37 @@ export async function create(draft: CallDraft): Promise<{ id: string }> {
 	}
 
 	return { id };
+}
+
+/**
+ * Change a call.
+ *
+ * Every field of it, the track included: a call created against the wrong one
+ * is a typo an admin should be able to fix, and since a proposal reads its
+ * track through the call it was pitched to, fixing it here fixes it for
+ * everything already inside. What this cannot do is move a proposal between
+ * calls — those stay where they were pitched, which is intent's rule and not
+ * this screen's to break.
+ *
+ * The deadline is written exactly as given, past or future, so this is also
+ * how a call is reopened or retroactively closed. Nothing else changes with
+ * it: a closed call's proposals were never archived, so there is nothing to
+ * bring back.
+ */
+export async function update(id: string, draft: CallDraft): Promise<boolean> {
+	const result = await db
+		.update(cfp)
+		.set({
+			name: draft.name,
+			track: draft.track,
+			description: draft.description,
+			closesAt: draft.closesAt,
+		})
+		.where(eq(cfp.id, id));
+
+	// No guard beyond the id, so zero rows means no such call — the only thing
+	// an edit can fail on. `updated_at` is the schema's `$onUpdate`.
+	return changed(result) === 1;
 }
 
 /**

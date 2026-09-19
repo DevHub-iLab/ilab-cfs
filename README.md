@@ -79,6 +79,14 @@ as of that moment and nothing else: what was already pitched to it is still read
 decided and edited. Closing twice is harmless and leaves the recorded closing
 time alone.
 
+**Edit** opens the call at `/admin/calls/<id>`, where every field of it can be
+changed — the track included, which re-labels every proposal pitched to it, since
+a proposal takes its track from its call. The deadline is the only thing that
+decides whether a call is open, so that page is also where one is extended,
+reopened (move the date forward, or switch to *never closes*) or closed as of a
+date you choose. What no edit can do is move a proposal between calls: those stay
+where they were pitched.
+
 Seeding by hand is still the quickest way to fill a fresh database, and the only
 way before anyone is an admin:
 
