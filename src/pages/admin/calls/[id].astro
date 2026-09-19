@@ -1,0 +1,157 @@
+---
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import Layout from '../../../layouts/Layout.astro';
+import SiteNav from '../../../components/SiteNav.astro';
+import CallForm from '../../../components/CallForm.astro';
+import Notice from '../../../components/Notice.astro';
+import { db } from '../../../db';
+import { cfp, proposal } from '../../../db/schema';
+import {
+	CALL_PROBLEMS,
+	TRACK_LABELS,
+	callValues,
+	echoed,
+	type CallProblem,
+} from '../../../lib/calls';
+
+/** Reads one call per request; middleware has already required an admin. */
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect(`/sign-in?redirect=${Astro.url.pathname}`);
+
+const { id } = Astro.params;
+const now = new Date();
+
+/*
+  The counts come along for the same reason they are in the list: what is
+  sitting in a call is the context for changing its deadline. Ten pitches in
+  and a week left is a different decision from none.
+*/
+const [row] = await db
+	.select({
+		call: cfp,
+		proposals: sql<number>`count(${proposal.id})`,
+		undecided: sql<number>`sum(case when ${proposal.status} = 'submitted' then 1 else 0 end)`,
+	})
+	.from(cfp)
+	.leftJoin(proposal, eq(proposal.cfpId, cfp.id))
+	.where(and(eq(cfp.id, id!), isNull(cfp.deletedAt)))
+	.groupBy(cfp.id)
+	.limit(1);
+
+// A deleted call is not editable and not found — restoring it on the calls
+// list is the way back to this page, and the only thing that could be done
+// here otherwise is edit something nobody can see.
+if (!row) return new Response('Not found', { status: 404 });
+
+const { call, proposals, undecided } = row;
+const isOpen = call.closesAt === null || call.closesAt > now;
+
+const stamp = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	year: 'numeric',
+	hour: 'numeric',
+	minute: '2-digit',
+	timeZone: 'Asia/Singapore',
+});
+
+const params = Astro.url.searchParams;
+const error = params.get('error');
+const formError = error && error in CALL_PROBLEMS ? CALL_PROBLEMS[error as CallProblem] : null;
+
+// What is on the row, unless a refused save is handing back what was typed.
+const values = echoed(params, callValues(call));
+---
+
+<Layout title={`${call.name} — iLab CFS`}>
+	<div class="flex min-h-full flex-col">
+		<SiteNav user={user} current="admin" cta={false}>
+			<span slot="status" class:list={['tag', isOpen ? 'tag-accent' : 'tag-neutral']}>
+				{isOpen ? 'open' : 'closed'}
+			</span>
+		</SiteNav>
+
+		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_320px]">
+			<div class="flex flex-col gap-[20px]">
+				<div class="flex flex-col gap-[5px]">
+					<a class="text-[13px]" href="/admin/calls">← All calls</a>
+					<h1 class="m-0 text-[32px]">{call.name}</h1>
+					<p class="m-0 text-[14px] text-muted">
+						{TRACK_LABELS[call.track]} ·{' '}
+						{
+							call.closesAt
+								? `${isOpen ? 'closes' : 'closed'} ${stamp.format(call.closesAt)} SGT`
+								: 'never closes'
+						}
+					</p>
+				</div>
+
+				{
+					params.has('saved') && (
+						<Notice>
+							Saved. The homepage reads this on every request, so it is already showing.
+						</Notice>
+					)
+				}
+
+				<div
+					class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
+					style="box-shadow: var(--shadow-sm);"
+				>
+					<span style="font: 500 15px var(--font-heading);">
+						{
+							proposals === 0
+								? 'Nothing pitched to it yet'
+								: `${proposals} pitched · ${undecided} undecided`
+						}
+					</span>
+					<span class="text-[12.5px] text-muted">
+						{
+							/* The one thing an edit here cannot do, said where somebody might
+							   expect it to. Proposals stay in the call they were pitched to —
+							   a speaker who offered a talk for one event never finds it
+							   slotted into an unrelated month. */
+							proposals === 0
+								? 'Changing any of this affects nobody yet.'
+								: 'These stay in this call whatever you change, including its deadline. Nothing is reassigned and nothing is archived.'
+						}
+					</span>
+				</div>
+
+				<CallForm
+					action={`/admin/calls/${call.id}/save`}
+					values={values}
+					submit="Save changes"
+					editing
+					error={formError ?? undefined}
+				/>
+			</div>
+
+			<aside
+				class="flex flex-col gap-[16px] self-start rounded-[8px] p-[22px]"
+				style="background: var(--color-surface);"
+			>
+				<div>
+					<div style="font: 500 14px var(--font-heading);" class="mb-[6px]">
+						What changes when you save
+					</div>
+					<p class="m-0 text-[12px] leading-relaxed text-muted">
+						The name, blurb and track are what the homepage shows and what a reviewer
+						reads beside every proposal in here — the track included, since a proposal
+						takes its track from the call it was pitched to.
+					</p>
+				</div>
+
+				<div class="h-px" style="background: var(--color-divider);"></div>
+
+				<p class="m-0 text-[12px] leading-relaxed text-muted">
+					The deadline is the only thing that decides whether this call is open, so
+					moving it forward reopens the call and moving it into the past shuts it. There
+					is no separate switch, and nothing else moves with it.
+				</p>
+			</aside>
+		</main>
+	</div>
+</Layout>

@@ -1,21 +1,22 @@
 ---
-import { asc, gt, isNull, or, sql } from 'drizzle-orm';
+import { asc, sql } from 'drizzle-orm';
 import Layout from '../../layouts/Layout.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import ProposalForm from '../../components/ProposalForm.astro';
 import { db } from '../../db';
 import { cfp } from '../../db/schema';
+import { takingSubmissions } from '../../lib/calls';
 
 export const prerender = false;
 
 const now = new Date();
 
-// Same predicate as the homepage and as the insert's own guard: a call is open
-// while it has no deadline or its deadline is still ahead.
+// The same predicate the homepage filters on and the insert guards with: not
+// deleted, and either no deadline or a deadline still ahead.
 const openCalls = await db
 	.select()
 	.from(cfp)
-	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
+	.where(takingSubmissions(now))
 	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
 
 // Arriving from a specific call's "Submit a proposal" button. Unknown or closed

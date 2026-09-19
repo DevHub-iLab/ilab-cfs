@@ -1,0 +1,448 @@
+---
+import { asc, eq, sql } from 'drizzle-orm';
+import Layout from '../../../layouts/Layout.astro';
+import SiteNav from '../../../components/SiteNav.astro';
+import { db } from '../../../db';
+import CallActions from '../../../components/CallActions.astro';
+import Notice from '../../../components/Notice.astro';
+import CallForm from '../../../components/CallForm.astro';
+import { cfp, proposal, type Cfp } from '../../../db/schema';
+import {
+	BLANK_CALL,
+	CALL_PROBLEMS,
+	CALL_VIEWS,
+	TRACK_LABELS,
+	actionUrl,
+	echoed,
+	readView,
+	type CallProblem,
+} from '../../../lib/calls';
+
+/**
+ * The only screen that decides what speakers can pitch to.
+ *
+ * Reads the calls and their proposal counts per request, so it cannot be
+ * prerendered — and middleware has already required an admin to be here, since
+ * the rule is on the `/admin` prefix rather than on this page.
+ */
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/sign-in?redirect=/admin/calls');
+
+const now = new Date();
+
+/**
+ * Every call, with what is sitting in it.
+ *
+ * The counts are the point of showing closed calls at all: a closed call with
+ * undecided proposals in it is the committee's backlog, and intent asks for
+ * that to be a glance rather than a query someone remembers to run. The join
+ * is left, so a call nobody has pitched to counts zero rather than vanishing.
+ */
+const rows = await db
+	.select({
+		call: cfp,
+		proposals: sql<number>`count(${proposal.id})`,
+		undecided: sql<number>`sum(case when ${proposal.status} = 'submitted' then 1 else 0 end)`,
+	})
+	.from(cfp)
+	.leftJoin(proposal, eq(proposal.cfpId, cfp.id))
+	.groupBy(cfp.id)
+	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
+
+const isOpen = (call: Cfp) => call.closesAt === null || call.closesAt > now;
+
+/*
+  One query, three lists. This is the only screen that reads deleted calls at
+  all — everywhere else runs `takingSubmissions()`, which excludes them — so
+  the query asks for everything and the sorting happens here.
+
+  Open calls want the soonest deadline first with the continuous ones after,
+  which is the order the query already produces and the order the homepage
+  shows them in. Closed calls want the opposite, most recently closed first, so
+  they are reversed rather than asked for again. Deleted ones are ordered by
+  when they were deleted, which no `cfp` ordering gives.
+*/
+const live = rows.filter((row) => row.call.deletedAt === null);
+const open = live.filter((row) => isOpen(row.call));
+const closed = live.filter((row) => !isOpen(row.call)).reverse();
+const deleted = rows
+	.filter((row) => row.call.deletedAt !== null)
+	.sort((a, b) => b.call.deletedAt!.getTime() - a.call.deletedAt!.getTime());
+
+/*
+  Which of the three the page is showing.
+
+  The filter is four links rather than a scripted control, so each view is a
+  URL: it can be linked, it survives the redirect after every write — every
+  action on a card posts back to the view it was on — and it works with no
+  JavaScript, like everything else on these screens.
+*/
+const view = readView(Astro.url.searchParams.get('show'));
+
+const VIEWS: Record<typeof view, { label: string; count: number }> = {
+	all: { label: 'All', count: live.length },
+	open: { label: 'Open', count: open.length },
+	closed: { label: 'Closed', count: closed.length },
+	// Counted even when it is zero, so the tab is a stable place rather than
+	// one that appears the first time something is deleted.
+	deleted: { label: 'Deleted', count: deleted.length },
+};
+
+const showing = {
+	open: view === 'all' || view === 'open',
+	closed: view === 'all' || view === 'closed',
+	deleted: view === 'deleted',
+};
+
+/** Said when the view the admin picked has nothing in it. */
+const NOTHING_HERE: Record<typeof view, string> = {
+	all: '',
+	open: 'Nothing is taking submissions, so the homepage is showing its empty state. Create a call, or reopen a closed one by moving its deadline.',
+	closed: 'No call has closed yet.',
+	deleted: 'Nothing has been deleted. Deleting a call hides it from everywhere else and leaves it here, restorable.',
+};
+const nothingHere =
+	view !== 'all' && VIEWS[view].count === 0 ? NOTHING_HERE[view] : null;
+
+/** Instants are stored UTC and read in Singapore time — the talks are local. */
+const stamp = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	year: 'numeric',
+	hour: 'numeric',
+	minute: '2-digit',
+	timeZone: 'Asia/Singapore',
+});
+
+function daysLeft(closesAt: Date): string {
+	const days = Math.floor((closesAt.getTime() - now.getTime()) / 86_400_000);
+	return days <= 0 ? 'under a day left' : `${days} days left`;
+}
+
+const params = Astro.url.searchParams;
+
+const notice = params.has('created')
+	? 'Call created. It is on the homepage now, and open for submissions.'
+	: params.has('closed')
+		? 'Closed. Nothing new can be submitted to it — everything already in it is still yours to review.'
+		: params.has('restored')
+			? 'Restored, in the state it was deleted in. If it was open, it is taking submissions again.'
+			: null;
+
+// Deleting is the one notice that has somewhere to point: the call has just
+// left whichever list the admin is looking at, and Deleted is where it went.
+const justDeleted = params.has('deleted');
+
+/*
+  Two places for two kinds of refusal. Anything the new-call form got wrong is
+  said inside that form, next to the fields it is about; a refusal belonging to
+  no field — closing a call that was already closed — is said at the top of the
+  list it is about.
+*/
+const PAGE_ERRORS: Record<string, string> = {
+	close: 'That call was already closed. Its closing time is left as it was.',
+	delete:
+		'That call was not deleted. Something has been pitched to it since the page was drawn, and a call that has been pitched to is closed rather than hidden.',
+	restore: 'That call was already back. Nothing changed.',
+};
+
+const error = params.get('error');
+const formError = error && error in CALL_PROBLEMS ? CALL_PROBLEMS[error as CallProblem] : null;
+const pageError = error && !formError ? (PAGE_ERRORS[error] ?? PAGE_ERRORS.close) : null;
+
+const typed = echoed(params, BLANK_CALL);
+---
+
+<Layout title="Calls — iLab CFS">
+	<div class="flex min-h-full flex-col">
+		<SiteNav user={user} current="admin" cta={false} />
+
+		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_320px]">
+			<div class="flex flex-col gap-[20px]">
+				<div>
+					<h1 class="m-0 mb-[5px] text-[32px]">Calls</h1>
+					<p class="m-0 max-w-[58ch] text-[14px] text-muted">
+						A call takes submissions until it closes. Closing one stops that and
+						nothing else — what is already in it is still read, still decided, still
+						scheduled, and still editable by the speaker who wrote it. A call itself
+						stays editable too, deadline included, which is how one is extended or
+						reopened.
+					</p>
+				</div>
+
+				{
+					(notice || justDeleted) && (
+						<Notice keep={['show']}>
+							{justDeleted ? (
+								<>
+									Deleted. It is off the homepage and out of these lists — nothing
+									is gone, and it is in{' '}
+									<a href="/admin/calls?show=deleted">Deleted</a>, where Restore puts
+									it back exactly as it was.
+								</>
+							) : (
+								notice
+							)}
+						</Notice>
+					)
+				}
+				{pageError && <Notice tone="alert" keep={['show']}>{pageError}</Notice>}
+
+				{/*
+				  Links, not radios: each view is a URL. `.seg` is the design's own
+				  segmented control — the canvas filters the reviewer pool with one —
+				  and the only thing it has to be taught here is that a link can be
+				  the selected option.
+				*/}
+				<nav class="seg self-start" aria-label="Which calls to show">
+					{
+						CALL_VIEWS.map((key) => (
+							<a
+								class="seg-opt"
+								href={key === 'all' ? '/admin/calls' : `/admin/calls?show=${key}`}
+								aria-current={view === key ? 'page' : undefined}
+							>
+								{VIEWS[key].label}
+								<span class="seg-count">{VIEWS[key].count}</span>
+							</a>
+						))
+					}
+				</nav>
+
+				{nothingHere && <p class="m-0 text-[13px] text-muted">{nothingHere}</p>}
+
+				{
+					view === 'all' && rows.length === 0 && (
+						<div
+							class="flex flex-col gap-[7px] rounded-[8px] px-[17px] py-[15px]"
+							style="box-shadow: var(--shadow-sm);"
+						>
+							<span style="font: 500 16px var(--font-heading);">No calls yet</span>
+							<span class="text-[13px] text-muted">
+								Until one exists the homepage shows its empty state and there is
+								nothing for a speaker to submit to. The form makes the first one.
+							</span>
+						</div>
+					)
+				}
+
+				{
+					showing.open && open.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Open</h2>
+								<span class="text-[12px] text-muted">Taking submissions now.</span>
+							</div>
+
+							{open.map(({ call, proposals, undecided }) => (
+								<article
+									class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+									style="box-shadow: var(--shadow-sm);"
+								>
+									<div class="flex flex-col gap-[5px]">
+										<div class="flex flex-wrap items-center gap-[9px]">
+											<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+											{call.closesAt ? (
+												<span class="text-[12px] text-muted">
+													Closes {stamp.format(call.closesAt)} SGT ·{' '}
+													{daysLeft(call.closesAt)}
+												</span>
+											) : (
+												<span class="text-[12px] text-muted">
+													Never closes — a continuous call
+												</span>
+											)}
+										</div>
+
+										<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+										{call.description && (
+											<span class="text-[13px] text-muted">{call.description}</span>
+										)}
+
+										<span class="text-[12.5px] text-muted">
+											{proposals === 0
+												? 'Nothing pitched to it yet.'
+												: `${proposals} pitched · ${undecided} undecided`}
+										</span>
+									</div>
+
+									{/* Editing is a page, so it is a link. Closing and deleting
+									    change something on the spot, so both are POSTs — a link
+									    that changes something is a link a crawler can pull, and
+									    both are guarded again in SQL regardless. */}
+									<CallActions call={call} proposals={proposals} isOpen view={view} />
+								</article>
+							))}
+						</section>
+					)
+				}
+
+				{
+					showing.closed && closed.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Closed</h2>
+								<span class="text-[12px] text-muted">
+									Not an archive — proposals in these are still live.
+								</span>
+							</div>
+
+							{closed.map(({ call, proposals, undecided }) => (
+								<article
+									class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+									style="box-shadow: var(--shadow-sm); opacity: 0.82;"
+								>
+									<div class="flex flex-col gap-[5px]">
+										<div class="flex flex-wrap items-center gap-[9px]">
+											<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+											<span class="text-[12px] text-muted">
+												Closed {stamp.format(call.closesAt!)} SGT
+											</span>
+										</div>
+
+										<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+										<span class="text-[12.5px] text-muted">
+											{proposals === 0 ? (
+												'Nothing was pitched to it.'
+											) : undecided > 0 ? (
+												<>
+													{proposals} pitched ·{' '}
+													<span style="color: var(--color-accent);">
+														{undecided} still undecided
+													</span>
+												</>
+											) : (
+												`${proposals} pitched · all decided`
+											)}
+										</span>
+									</div>
+
+									{/* The way back in: a closed call is renamed, or reopened, from
+									    the same screen its deadline is edited on. */}
+									<CallActions call={call} proposals={proposals} isOpen={false} view={view} />
+								</article>
+							))}
+						</section>
+					)
+				}
+
+				{
+					showing.deleted && deleted.length > 0 && (
+						<section class="flex flex-col gap-[10px]">
+							<div class="flex items-baseline gap-[12px]">
+								<h2 class="m-0 text-[20px]">Deleted</h2>
+								<span class="text-[12px] text-muted">
+									Hidden, not gone. Restoring puts one back as it was.
+								</span>
+							</div>
+
+							{deleted.map(({ call }) => (
+								<article
+									class="grid items-center gap-[16px] rounded-[8px] px-[17px] py-[15px] sm:grid-cols-[1fr_auto]"
+									style="box-shadow: inset 0 0 0 1px var(--color-divider); opacity: 0.66;"
+								>
+									<div class="flex flex-col gap-[5px]">
+										<div class="flex flex-wrap items-center gap-[9px]">
+											<span class="tag tag-neutral">{TRACK_LABELS[call.track]}</span>
+											<span class="text-[12px] text-muted">
+												Deleted {stamp.format(call.deletedAt!)} SGT
+											</span>
+										</div>
+
+										<span style="font: 500 16px var(--font-heading);">{call.name}</span>
+
+										<span class="text-[12.5px] text-muted">
+											{call.closesAt
+												? `Comes back closed — its deadline was ${stamp.format(call.closesAt)} SGT.`
+												: 'Comes back open, and back on the homepage.'}
+										</span>
+									</div>
+
+									{/*
+									  One action, so no menu: a kebab hiding a single item is a
+									  click spent on finding the click.
+									*/}
+									<form
+										method="post"
+										action={actionUrl(call.id, 'restore', view)}
+										class="justify-self-start sm:justify-self-end"
+									>
+										<button class="btn btn-secondary" style="padding: 7px 12px;" type="submit">
+											Restore
+										</button>
+									</form>
+								</article>
+							))}
+						</section>
+					)
+				}
+			</div>
+
+			<aside
+				class="flex flex-col gap-[16px] self-start rounded-[8px] p-[22px]"
+				style="background: var(--color-surface);"
+			>
+				<div>
+					<div style="font: 500 14px var(--font-heading);" class="mb-[6px]">New call</div>
+					<p class="m-0 text-[12px] leading-relaxed text-muted">
+						It appears on the homepage as soon as you create it. Every field stays
+						editable afterwards; what cannot move is the call a proposal was pitched
+						to.
+					</p>
+				</div>
+
+				<CallForm
+					action="/admin/calls/create"
+					values={typed}
+					submit="Create call"
+					error={formError ?? undefined}
+				/>
+			</aside>
+		</main>
+	</div>
+</Layout>
+
+<style>
+	/*
+	  `.seg` is built for radio inputs — the component layer rings the checked
+	  one with `:has(input:checked)`. These options are links, so the ring has
+	  to come from `aria-current` instead. Unlayered, so it beats both the
+	  component layer's `.seg-opt` and the base layer's accent `a` colour
+	  without a specificity argument.
+	*/
+	.seg-opt {
+		color: color-mix(in srgb, var(--color-text) 68%, transparent);
+		text-decoration: none;
+		transition: color 140ms ease;
+	}
+
+	.seg-opt:hover {
+		color: var(--color-text);
+	}
+
+	.seg-opt[aria-current='page'] {
+		color: var(--color-accent);
+		box-shadow: inset 0 0 0 1px var(--color-accent);
+	}
+
+	/*
+	  The count is the only way to know Deleted has anything in it without
+	  opening it, so it is always drawn — including as a zero, which is also
+	  what stops the tab row changing width as calls come and go.
+	*/
+	.seg-count {
+		margin-left: 6px;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.6;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.seg-opt {
+			transition: none;
+		}
+	}
+</style>

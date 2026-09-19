@@ -2,6 +2,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import Layout from '../../layouts/Layout.astro';
 import SiteNav from '../../components/SiteNav.astro';
+import Notice from '../../components/Notice.astro';
 import ProposalForm from '../../components/ProposalForm.astro';
 import { db } from '../../db';
 import { cfp, proposal, proposalRevision } from '../../db/schema';
@@ -78,15 +79,11 @@ const STATUS_TAG: Record<string, string> = {
 
 				{
 					(justSubmitted || justSaved) && (
-						<p
-							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
-							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
-							role="status"
-						>
+						<Notice>
 							{justSubmitted
 								? "Submitted. The committee reads the pool and you'll hear back by email — you can keep editing in the meantime."
 								: 'Saved as a draft. It is not in front of the committee until you submit it.'}
-						</p>
+						</Notice>
 					)
 				}
 

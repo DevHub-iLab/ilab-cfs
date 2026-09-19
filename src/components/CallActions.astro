@@ -1,0 +1,283 @@
+---
+import type { Cfp } from '../db/schema';
+import { actionUrl, type CallView } from '../lib/calls';
+
+interface Props {
+	call: Cfp;
+	/** How many proposals were pitched to it. Deleting is only for none. */
+	proposals: number;
+	/** Open calls can be closed; closed ones are reopened by editing the date. */
+	isOpen: boolean;
+	/** Which list this card is in, so a write comes back to the same one. */
+	view: CallView;
+}
+
+const { call, proposals, isOpen, view } = Astro.props;
+
+/*
+  Bootstrap Icons 1.13.1 (MIT), inlined rather than fetched. They are a third
+  convention beside the stroked `.ic` and the 256-grid `.ic-solid` — a 16 grid,
+  filled — but only the viewBox differs, so `.ic-solid` still dresses them:
+  it sets `fill: currentColor`, which is how an icon dims with the label it
+  sits beside.
+*/
+const ICONS = {
+	kebab: ['M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0'],
+	pencil: [
+		'M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z',
+		'M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z',
+	],
+	door: ['M12 1a1 1 0 0 1 1 1v13h1.5a.5.5 0 0 1 0 1h-13a.5.5 0 0 1 0-1H3V2a1 1 0 0 1 1-1zm-2 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2'],
+	trash: [
+		'M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z',
+		'M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z',
+	],
+} as const;
+
+// The second path of each pair is the outline drawn around the first, which
+// only reads right with the even-odd rule.
+const EVENODD = new Set([ICONS.pencil[1]]);
+---
+
+{/*
+  A disclosure, not a scripted popup.
+
+  `<details>` opens and closes with no JavaScript at all, which is what every
+  other control on these screens does — the chip editor, the link rows, the
+  close button. The script below only adds what a native disclosure has no
+  opinion about: that opening one closes the others, that a click elsewhere
+  dismisses it, and that Escape gives the keyboard back to the trigger.
+*/}
+<details class="actions" data-actions>
+	<summary class="actions-trigger" aria-label={`Actions for ${call.name || 'this call'}`}>
+		<svg class="ic-solid" viewBox="0 0 16 16" aria-hidden="true">
+			<path d={ICONS.kebab[0]}></path>
+		</svg>
+	</summary>
+
+	<div class="actions-menu">
+		<a class="actions-item" href={`/admin/calls/${call.id}`}>
+			<svg class="ic-solid" viewBox="0 0 16 16" aria-hidden="true">
+				{ICONS.pencil.map((d) => <path d={d} fill-rule={EVENODD.has(d) ? 'evenodd' : undefined} />)}
+			</svg>
+			Edit
+		</a>
+
+		{
+			/* Closed calls have no close button: the deadline is already behind
+			   them, and moving it is an edit. */
+			isOpen && (
+				<form method="post" action={actionUrl(call.id, 'close', view)}>
+					<button class="actions-item" type="submit">
+						<svg class="ic-solid" viewBox="0 0 16 16" aria-hidden="true">
+							<path d={ICONS.door[0]} />
+						</svg>
+						Close now
+					</button>
+				</form>
+			)
+		}
+
+		{/*
+		  No confirmation step, deliberately: deleting is soft and the calls
+		  list grows a Deleted section with a Restore beside the call the
+		  moment this posts. A blocking dialog in front of a one-click undo
+		  buys nothing and costs everyone.
+		*/}
+		<form method="post" action={actionUrl(call.id, 'delete', view)}>
+			<button
+				class="actions-item actions-item-danger"
+				type="submit"
+				disabled={proposals > 0}
+				aria-describedby={proposals > 0 ? `no-delete-${call.id}` : undefined}
+			>
+				<svg class="ic-solid" viewBox="0 0 16 16" aria-hidden="true">
+					{ICONS.trash.map((d) => <path d={d} />)}
+				</svg>
+				Delete
+			</button>
+		</form>
+
+		{
+			/* Said in the menu rather than in a `title`: a disabled button takes
+			   no pointer events in some browsers, so its tooltip never appears
+			   and the item just looks broken. */
+			proposals > 0 && (
+				<span class="actions-note" id={`no-delete-${call.id}`}>
+					{proposals === 1 ? 'One pitch is in this call' : `${proposals} pitches are in this call`} —
+					hiding it would hide them from the committee too. Close it instead.
+				</span>
+			)
+		}
+	</div>
+</details>
+
+<style>
+	.actions {
+		position: relative;
+		justify-self: start;
+	}
+
+	@media (min-width: 640px) {
+		.actions {
+			justify-self: end;
+		}
+	}
+
+	/* An open menu has to sit above the cards below it, and a positioned
+	   element only stacks once it has a z-index to stack by. */
+	.actions[open] {
+		z-index: 20;
+	}
+
+	/*
+	  Both halves of hiding the marker: Chrome and Safari drop it as soon as
+	  `display` is anything but `list-item`, Firefox needs `list-style`.
+	*/
+	.actions-trigger {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border-radius: var(--radius-sm);
+		color: color-mix(in srgb, var(--color-text) 55%, transparent);
+		cursor: pointer;
+		list-style: none;
+		transition: color 140ms ease, background 140ms ease;
+	}
+
+	.actions-trigger::-webkit-details-marker {
+		display: none;
+	}
+
+	.actions-trigger:hover,
+	.actions[open] .actions-trigger {
+		background: color-mix(in srgb, var(--color-text) 8%, transparent);
+		color: var(--color-text);
+	}
+
+	.actions-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		right: 0;
+		z-index: 1;
+
+		display: flex;
+		flex-direction: column;
+		min-width: 210px;
+		padding: var(--space-2);
+		border-radius: var(--radius-md);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-md);
+
+		/*
+		  An animation rather than a transition, because `<details>` toggles
+		  `display` and a transition has nothing to run from. This runs once, on
+		  the frame the box first exists, so it needs neither `@starting-style`
+		  nor `allow-discrete`.
+		*/
+		animation: actions-in 120ms ease-out;
+	}
+
+	@keyframes actions-in {
+		from {
+			opacity: 0;
+			translate: 0 -4px;
+		}
+	}
+
+	.actions-menu form {
+		display: contents;
+	}
+
+	.actions-item {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		width: 100%;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		font: inherit;
+		font-size: 13.5px;
+		color: var(--color-text);
+		text-align: left;
+		text-decoration: none;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.actions-item:hover:not(:disabled),
+	.actions-item:focus-visible {
+		background: color-mix(in srgb, var(--color-text) 8%, transparent);
+		color: var(--color-accent);
+	}
+
+	.actions-item-danger {
+		color: #f6a6a6;
+	}
+
+	.actions-item-danger:hover:not(:disabled),
+	.actions-item-danger:focus-visible {
+		background: color-mix(in srgb, #f6a6a6 12%, transparent);
+		color: #f6a6a6;
+	}
+
+	.actions-item:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.actions-note {
+		padding: 2px 10px 4px;
+		font-size: 11px;
+		line-height: 1.45;
+		white-space: normal;
+		color: color-mix(in srgb, var(--color-text) 50%, transparent);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.actions-menu {
+			animation: none;
+		}
+
+		.actions-trigger {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	/*
+	  Enhancement only. The disclosure opens, the link navigates and both forms
+	  post with none of this — every guard that matters is in SQL.
+	*/
+	const menus = [...document.querySelectorAll<HTMLDetailsElement>('details[data-actions]')];
+
+	for (const menu of menus) {
+		// Two menus open at once is two overlapping boxes, and on a card list
+		// they overlap the card below rather than each other.
+		menu.addEventListener('toggle', () => {
+			if (!menu.open) return;
+			for (const other of menus) if (other !== menu) other.open = false;
+		});
+	}
+
+	document.addEventListener('pointerdown', (event) => {
+		for (const menu of menus) {
+			if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+		}
+	});
+
+	// Escape hands focus back to the trigger, or a keyboard user is left
+	// standing on a menu that is no longer there.
+	document.addEventListener('keydown', (event) => {
+		if (event.key !== 'Escape') return;
+		const open = menus.find((menu) => menu.open);
+		if (!open) return;
+		open.open = false;
+		open.querySelector('summary')?.focus();
+	});
+</script>

@@ -15,3 +15,16 @@ import * as schema from './schema';
 export const db = drizzle(env.DB, { schema });
 
 export type Database = typeof db;
+
+/**
+ * How many rows a write changed.
+ *
+ * D1 reports affected rows on `meta.changes`, and Drizzle passes its result
+ * through untouched, so one reader serves both a Drizzle builder and a raw
+ * statement handed to the binding. Every guarded write asserts on this: a
+ * statement whose WHERE matched nothing is a *successful* statement, so the
+ * count is the only thing that says whether the guard let the write through.
+ */
+export function changed(result: { meta?: { changes?: number } }): number {
+	return result?.meta?.changes ?? 0;
+}

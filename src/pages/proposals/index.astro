@@ -2,6 +2,7 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import Layout from '../../layouts/Layout.astro';
 import SiteNav from '../../components/SiteNav.astro';
+import Notice from '../../components/Notice.astro';
 import { db } from '../../db';
 import { cfp, proposal, type ProposalStatus } from '../../db/schema';
 
@@ -116,24 +117,16 @@ const error = Astro.url.searchParams.get('error');
 
 			{
 				notice && (
-					<p
-						class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
-						style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
-						role="status"
-					>
+					<Notice>
 						{notice}
-					</p>
+					</Notice>
 				)
 			}
 			{
 				error && (
-					<p
-						class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
-						style="background: var(--color-surface); box-shadow: inset 0 0 0 1px #f6a6a6; color: #f6a6a6;"
-						role="alert"
-					>
+					<Notice tone="alert">
 						{ERRORS[error] ?? ERRORS.withdraw}
-					</p>
+					</Notice>
 				)
 			}
 

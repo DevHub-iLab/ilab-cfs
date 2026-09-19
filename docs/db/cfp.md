@@ -13,6 +13,11 @@ There is no `status` column: closing a call *is* setting `closes_at`, and
 submission guard already has to run in SQL. A second source of truth for  
 open-ness could only disagree with it.  
   
+Deleting is soft, and `deleted_at` is the one place that is not true of: it  
+is a second thing a query has to ask, because a deleted call is neither open  
+nor closed but gone from everywhere except the admin's own list, where it  
+can be restored.  
+  
 Timestamp and id conventions follow Better Auth's generated tables rather  
 than picking our own, so one migration stream stays internally consistent.
 
@@ -25,6 +30,7 @@ than picking our own, so one migration stream stays internally consistent.
 | track | text | - | NO | - | - | - |
 | description | text | - | YES | - | - | The blurb under the name on the landing page. |
 | closes_at | integer | - | YES | - | - | - |
+| deleted_at | integer | - | YES | - | - | Deleted calls are hidden, not removed. Null is a live call.  Unlike `closes_at`, which is a fact about the call the whole product reads, this one is bookkeeping: every query outside the admin's own list has to exclude it, which is why the predicate both the homepage and the submission guard run lives in one place — `takingSubmissions()` in `src/lib/calls.ts` — rather than being written out per page. |
 | created_at | integer | `(cast(unixepoch('subsecond') * 1000 as integer))` | NO | - | - | - |
 | updated_at | integer | `(cast(unixepoch('subsecond') * 1000 as integer))` | NO | - | - | - |
 
