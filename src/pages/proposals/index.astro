@@ -90,10 +90,17 @@ const error = Astro.url.searchParams.get('error');
 
 <Layout title="Your proposals — iLab CFS">
 	<div class="flex min-h-full flex-col">
+		{/*
+		  No masthead CTA here: the page's own New proposal button is beside the
+		  heading, where a reader is already looking, and two primary buttons a
+		  few pixels apart reading differently only invite the question of how
+		  they differ.
+		*/}
 		<SiteNav
 			user={user}
 			current="proposals"
 			align="max(24px, calc((100% - 760px) / 2 + 24px))"
+			cta={false}
 		/>
 
 		<main class="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-[20px] px-[24px] pt-[32px] pb-[46px]">

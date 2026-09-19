@@ -80,9 +80,9 @@ const callsSubtitle = [
 	.join(' ');
 
 const HOW_IT_WORKS = [
-	'Sign in with a link — no password.',
+	'Sign in.',
 	'Write an abstract. Slides are optional.',
-	'The committee reads it and comments.',
+	'The committee reviews it.',
 	'You hear back by email, then we book you in.',
 ];
 
@@ -267,36 +267,29 @@ const user = Astro.locals.user;
 
 			<section class="page-x pb-[44px]">
 				<div class="flex max-w-[520px] flex-col gap-[14px]">
-				<h2 class="m-0 text-[25px]">How it works</h2>
-				<div>
-					{
-						HOW_IT_WORKS.map((step, i) => (
-							<div
-								class="grid grid-cols-[24px_1fr] gap-[11px] py-[10px]"
-								style={
-									i < HOW_IT_WORKS.length - 1
-										? 'border-bottom: 1px solid var(--color-divider);'
-										: ''
-								}
-							>
-								<span
-									class="mono"
-									style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 48%, transparent)'};`}
+					<h2 class="m-0 text-[25px]">How it works</h2>
+					<div>
+						{
+							HOW_IT_WORKS.map((step, i) => (
+								<div
+									class="grid grid-cols-[24px_1fr] gap-[11px] py-[10px]"
+									style={
+										i < HOW_IT_WORKS.length - 1
+											? 'border-bottom: 1px solid var(--color-divider);'
+											: ''
+									}
 								>
-									{String(i + 1).padStart(2, '0')}
-								</span>
-								<span class="text-[13.5px]">{step}</span>
-							</div>
-						))
-					}
-				</div>
-				<p
-					class="m-0 rounded-[8px] px-[16px] py-[14px] text-[13px]"
-					style="box-shadow: inset 0 0 0 1px var(--color-divider); line-height: 1.6; color: color-mix(in srgb, var(--color-text) 70%, transparent);"
-				>
-					Your proposal stays yours — editable for its whole life, even after you're
-					scheduled.
-				</p>
+									<span
+										class="mono"
+										style={`color: ${i === 0 ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 48%, transparent)'};`}
+									>
+										{String(i + 1).padStart(2, '0')}
+									</span>
+									<span class="text-[13.5px]">{step}</span>
+								</div>
+							))
+						}
+					</div>
 				</div>
 			</section>
 

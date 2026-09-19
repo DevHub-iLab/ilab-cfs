@@ -87,7 +87,7 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		*/}
 		{
 			cta && (
-				<a class="btn btn-primary" style="padding: 7px 14px;" href="/proposals/new">
+				<a class="cta-link" style="padding: 7px 14px;" href="/proposals/new">
 					Submit a proposal
 				</a>
 			)
@@ -248,12 +248,22 @@ const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase(
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		font-size: 12.5px;
+		font-size: 0.875rem;
 		color: color-mix(in srgb, var(--color-text) 65%, transparent);
 		transition: color 140ms ease;
 	}
 
+	.cta-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.875rem;
+		color: color-mix(in srgb, var(--color-text) 90%, transparent);
+		transition: color 140ms ease;
+	}
+
 	.nav-link:hover,
+	.cta-link:hover,
 	.nav-link:focus-visible,
 	.nav-link[aria-current='page'] {
 		color: var(--color-text);
