@@ -45,13 +45,19 @@ Two pnpm details that will otherwise waste your time:
 
 ## Current state
 
-Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp` table, and two screens — `/sign-in` and the homepage.
+Built: Astro + Cloudflare adapter + Tailwind 4 with the Nocturne layer, authentication end to end (D1 + KV bindings, Better Auth with magic link, OAuth, roles and middleware, and the Resend send function), the `cfp`, `proposal` and `proposal_revision` tables, and the speaker's half of the product — `/sign-in`, the homepage, `/proposals`, `/proposals/new` and the proposal editor at `/proposals/<id>`, with sign-out.
 
-Not yet built: the R2 binding, every application table except `cfp` (`event`, `proposal`, `proposal_revision`, `review`, `attachment`, `audit_log`, `notification`), and every screen behind auth. `/proposals`, `/proposals/new`, `/review`, `/admin`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404 — middleware guards the first four by prefix, so signed-out visitors are redirected to sign-in and only then meet the 404.
+A speaker can sign in, write a pitch, submit it, keep editing it, withdraw it and delete a draft. Nobody can answer them yet.
 
-**There is no admin UI for creating a call**, so a local database has no open calls and the homepage correctly shows its empty state. Seed `cfp` rows by hand — the README has the SQL.
+Not yet built: the R2 binding, the `event`, `review`, `attachment`, `audit_log` and `notification` tables, and every screen for a reviewer or an admin. `/review`, `/admin`, `/schedule`, `/archive`, `/code-of-conduct` and a call's own page are all linked to and all 404 — middleware guards the first two by prefix, so signed-out visitors are redirected to sign-in and only then meet the 404.
 
-The homepage is built from artboard 4a of the design canvas, minus four bands that read `event` and `proposal`: the hero's proposal count, the stat band, "Next up" and "Recently on stage". They were left out rather than filled with the design's sample figures, which would state invented numbers as fact on a public page. Each is a self-contained addition once those tables exist.
+**There is no admin UI for creating a call**, so a local database has no open calls, the homepage shows its empty state, and `/proposals/new` has nothing to submit to. Seed `cfp` rows by hand — the README has the SQL. This is the first thing standing between the lab and using any of this.
+
+Two screens are built from the design canvas minus what they cannot read. The homepage (artboard 4a) omits four bands that need `event` and `proposal` aggregates: the hero's proposal count, the stat band, "Next up" and "Recently on stage". The speaker's list (1d) omits the scheduled talk's card and its deck ask, the comment counts, and the reviewer's line on a rejected pitch. All were left out rather than filled with the design's sample figures, which would state invented numbers as fact. Each is a self-contained addition once the tables exist.
+
+The submit editor (1c) has no autosave and no deck upload — the first needs a decision about how often to write revisions, the second needs R2.
+
+**`src/lib/proposals.ts` is where the invariants live.** Every write is one guarded statement plus an assertion on `meta.changes`, never a read-then-write, because D1 has no interactive transactions. Read the module comment before changing it: it says which statements are Drizzle builders, which two are `sql` templates and why, and how `statement()` lowers either kind so they can share one `env.DB.batch()`.
 
 Auth is verified working against local D1 + KV: magic link issued and consumed, session minted, role enforced, and a session surviving a KV miss by falling back to D1.
 
