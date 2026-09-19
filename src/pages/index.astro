@@ -55,25 +55,6 @@ function daysLeft(closesAt: Date): string {
 	return days <= 0 ? '<1d left' : `${days}d left`;
 }
 
-/** Small counts read as words in this voice — "Three ways in", not "3 ways in". */
-const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-const countWord = (n: number) => COUNT_WORDS[n] ?? String(n);
-
-const deadlined = openCalls.filter((call) => call.closesAt !== null).length;
-const continuous = openCalls.length - deadlined;
-
-/**
- * The design's "One closes soon. Two never close." — made true of whatever is
- * actually open, since the split between the two kinds of call is the whole
- * point of the line.
- */
-const callsSubtitle = [
-	deadlined > 0 && `${countWord(deadlined)} close${deadlined === 1 ? 's' : ''} soon.`,
-	continuous > 0 && `${countWord(continuous)} never close${continuous === 1 ? 's' : ''}.`,
-]
-	.filter(Boolean)
-	.join(' ');
-
 const HOW_IT_WORKS = [
 	'Sign in.',
 	'Write an abstract. Slides are optional.',
@@ -166,12 +147,14 @@ const user = Astro.locals.user;
 			</section>
 
 			<section class="page-x flex flex-col gap-[16px] py-[44px]">
-				<div class="flex flex-wrap items-baseline gap-[14px]">
-					<h2 class="m-0 text-[25px]">
-						{openCalls.length > 0 ? `${countWord(openCalls.length)} ways in` : 'Open calls'}
-					</h2>
-					{callsSubtitle && <span class="text-[13px] text-muted">{callsSubtitle}</span>}
-				</div>
+				{/*
+				  The design's heading counted the open calls — "Three ways in", over
+				  "One closes soon. Two never close." Both are gone at the lab's
+				  request: the heading says what the section is, and each card already
+				  carries its own deadline or its Always open tag, so the line under it
+				  was only restating them in aggregate.
+				*/}
+				<h2 class="m-0 text-[25px]">Open calls</h2>
 
 				<div class="grid gap-[14px] sm:grid-cols-2 lg:grid-cols-3">
 					{
