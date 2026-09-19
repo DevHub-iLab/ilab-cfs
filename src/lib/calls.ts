@@ -1,6 +1,6 @@
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, notExists, or, sql } from 'drizzle-orm';
 import { changed, db } from '../db';
-import { cfp, TRACKS, type Cfp, type Track } from '../db/schema';
+import { cfp, proposal, TRACKS, type Cfp, type Track } from '../db/schema';
 
 /**
  * Opening and closing calls.
@@ -265,6 +265,44 @@ export async function update(id: string, draft: CallDraft): Promise<boolean> {
 
 	// No guard beyond the id, so zero rows means no such call — the only thing
 	// an edit can fail on. `updated_at` is the schema's `$onUpdate`.
+	return changed(result) === 1;
+}
+
+/**
+ * Delete a call nobody has pitched to.
+ *
+ * The `not exists` is the whole safety of this, and it travels in the
+ * statement rather than sitting in a check before it for the usual reason: a
+ * proposal arriving between a read and a delete would otherwise take its call
+ * out from under it.
+ *
+ * There is no cascade to lean on, deliberately. `proposal.cfp_id` references
+ * this row with no `on delete`, so D1 refuses rather than taking the proposals
+ * with it — which is the right end state, since a pitch must not be silently
+ * erased along with the call it was made to. A constraint error is a poor way
+ * to say so, though, so the guard answers first and the foreign key is only
+ * the backstop.
+ *
+ * Nothing else is deletable. A call that has been pitched to is closed, not
+ * removed: closing stops submissions and leaves the record of what was offered
+ * to which event standing, which is the whole reason proposals are never
+ * reassigned.
+ */
+export async function remove(id: string): Promise<boolean> {
+	const result = await db
+		.delete(cfp)
+		.where(
+			and(
+				eq(cfp.id, id),
+				notExists(
+					db.select({ one: sql`1` }).from(proposal).where(eq(proposal.cfpId, id)),
+				),
+			),
+		);
+
+	// Exactly one, and no cascade counting to allow for: the only rows that
+	// could follow this one out are the proposals this statement refuses to
+	// delete in the first place.
 	return changed(result) === 1;
 }
 

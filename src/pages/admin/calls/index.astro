@@ -3,6 +3,7 @@ import { asc, eq, sql } from 'drizzle-orm';
 import Layout from '../../../layouts/Layout.astro';
 import SiteNav from '../../../components/SiteNav.astro';
 import { db } from '../../../db';
+import CallActions from '../../../components/CallActions.astro';
 import CallForm from '../../../components/CallForm.astro';
 import { cfp, proposal, type Cfp } from '../../../db/schema';
 import {
@@ -78,7 +79,9 @@ const notice = params.has('created')
 	? 'Call created. It is on the homepage now, and open for submissions.'
 	: params.has('closed')
 		? 'Closed. Nothing new can be submitted to it — everything already in it is still yours to review.'
-		: null;
+		: params.has('deleted')
+			? 'Call deleted. Nothing had been pitched to it, so nothing went with it.'
+			: null;
 
 /*
   Two places for two kinds of refusal. Anything the new-call form got wrong is
@@ -86,11 +89,15 @@ const notice = params.has('created')
   no field — closing a call that was already closed — is said at the top of the
   list it is about.
 */
+const PAGE_ERRORS: Record<string, string> = {
+	close: 'That call was already closed. Its closing time is left as it was.',
+	delete:
+		'That call was not deleted. Something has been pitched to it since the page was drawn, and a call that has been pitched to is closed rather than removed.',
+};
+
 const error = params.get('error');
 const formError = error && error in CALL_PROBLEMS ? CALL_PROBLEMS[error as CallProblem] : null;
-const pageError = error && !formError
-	? 'That call was already closed. Its closing time is left as it was.'
-	: null;
+const pageError = error && !formError ? (PAGE_ERRORS[error] ?? PAGE_ERRORS.close) : null;
 
 const typed = echoed(params, BLANK_CALL);
 ---
@@ -191,24 +198,11 @@ const typed = echoed(params, BLANK_CALL);
 										</span>
 									</div>
 
-									<div class="flex gap-[8px] justify-self-start sm:justify-self-end">
-										{/* Editing is a page, so it is a link. Closing changes
-										    something on the spot, so it is a POST — a link that
-										    changes something is a link a crawler can pull, and
-										    the window is guarded again in SQL regardless. */}
-										<a
-											class="btn btn-secondary"
-											style="padding: 7px 12px;"
-											href={`/admin/calls/${call.id}`}
-										>
-											Edit
-										</a>
-										<form method="post" action={`/admin/calls/${call.id}/close`}>
-											<button class="btn btn-ghost" style="padding: 7px 12px;" type="submit">
-												Close now
-											</button>
-										</form>
-									</div>
+									{/* Editing is a page, so it is a link. Closing and deleting
+									    change something on the spot, so both are POSTs — a link
+									    that changes something is a link a crawler can pull, and
+									    both are guarded again in SQL regardless. */}
+									<CallActions call={call} proposals={proposals} isOpen />
 								</article>
 							))}
 						</section>
@@ -258,13 +252,7 @@ const typed = echoed(params, BLANK_CALL);
 
 									{/* The way back in: a closed call is renamed, or reopened, from
 									    the same screen its deadline is edited on. */}
-									<a
-										class="btn btn-secondary justify-self-start sm:justify-self-end"
-										style="padding: 7px 12px;"
-										href={`/admin/calls/${call.id}`}
-									>
-										Edit
-									</a>
+									<CallActions call={call} proposals={proposals} isOpen={false} />
 								</article>
 							))}
 						</section>
