@@ -1,0 +1,144 @@
+---
+import { and, desc, eq } from 'drizzle-orm';
+import Layout from '../../layouts/Layout.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import ProposalForm from '../../components/ProposalForm.astro';
+import { db } from '../../db';
+import { cfp, proposal, proposalRevision } from '../../db/schema';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect(`/sign-in?redirect=${Astro.url.pathname}`);
+
+const { id } = Astro.params;
+
+// Ownership is part of the lookup, not a check after it: a proposal belonging
+// to somebody else is indistinguishable from one that does not exist, which is
+// the answer a stranger should get either way.
+const [row] = await db
+	.select({ proposal, cfp })
+	.from(proposal)
+	.innerJoin(cfp, eq(cfp.id, proposal.cfpId))
+	.where(and(eq(proposal.id, id!), eq(proposal.speakerId, user.id)))
+	.limit(1);
+
+if (!row) return new Response('Not found', { status: 404 });
+
+const revisions = await db
+	.select()
+	.from(proposalRevision)
+	.where(eq(proposalRevision.proposalId, row.proposal.id))
+	.orderBy(desc(proposalRevision.revision));
+
+const revisionDate = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	timeZone: 'Asia/Singapore',
+});
+
+const error = Astro.url.searchParams.get('error');
+const ERRORS: Record<string, string> = {
+	closed: "That call has closed, so this can't be submitted any more. Your edits are saved, and the proposal stays readable and reviewable.",
+	'not-draft': 'This proposal has already been submitted.',
+	title: 'Give the talk a title before submitting it.',
+	abstract: 'The abstract is what reviewers read. It cannot be empty.',
+};
+
+const justSubmitted = Astro.url.searchParams.has('submitted');
+const justSaved = Astro.url.searchParams.has('saved');
+
+const STATUS_TAG: Record<string, string> = {
+	draft: 'tag-neutral',
+	submitted: 'tag-accent',
+	accepted: 'tag-accent',
+	rejected: 'tag-neutral',
+	withdrawn: 'tag-neutral',
+};
+---
+
+<Layout title={`${row.proposal.title || 'Untitled proposal'} — iLab CFS`}>
+	<div class="flex min-h-full flex-col">
+		<SiteNav user={user} current="proposals">
+			<span slot="status" class:list={['tag', STATUS_TAG[row.proposal.status]]}>
+				{row.proposal.status}
+			</span>
+		</SiteNav>
+
+		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_300px]">
+			<div class="flex flex-col gap-[20px]">
+				<div>
+					<h1 class="m-0 mb-[5px] text-[32px]">
+						{row.proposal.title || 'Untitled proposal'}
+					</h1>
+					<p class="m-0 text-[14px] text-muted">
+						Everything here stays editable — including after you're scheduled.
+					</p>
+				</div>
+
+				{
+					(justSubmitted || justSaved) && (
+						<p
+							class="m-0 rounded-[8px] px-[16px] py-[12px] text-[13px]"
+							style="background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-accent);"
+							role="status"
+						>
+							{justSubmitted
+								? "Submitted. The committee reads the pool and you'll hear back by email — you can keep editing in the meantime."
+								: 'Saved as a draft. It is not in front of the committee until you submit it.'}
+						</p>
+					)
+				}
+
+				<ProposalForm
+					action={`/proposals/${row.proposal.id}/save`}
+					call={row.cfp}
+					status={row.proposal.status}
+					content={{
+						title: row.proposal.title,
+						abstract: row.proposal.abstract,
+						format: row.proposal.format,
+						level: row.proposal.level,
+						topics: row.proposal.topics,
+						links: row.proposal.links,
+						bio: row.proposal.bio,
+					}}
+					error={error ? (ERRORS[error] ?? ERRORS.closed) : undefined}
+				/>
+			</div>
+
+			<aside
+				class="flex flex-col gap-[18px] self-start rounded-[8px] p-[22px]"
+				style="background: var(--color-surface);"
+			>
+				<div>
+					<div style="font: 500 14px var(--font-heading);" class="mb-[8px]">Version history</div>
+					<div class="flex flex-col gap-[10px]">
+						{
+							revisions.map((rev, i) => (
+								<div class="flex gap-[10px]">
+									<span
+										class="mt-[6px] h-[7px] w-[7px] flex-none rounded-full"
+										style={`background: ${i === 0 ? 'var(--color-accent)' : 'var(--color-neutral-700)'};`}
+									/>
+									<span class="text-[12px] text-muted">
+										<b style="color: var(--color-text); font-weight: 500;">
+											v{rev.revision} · {revisionDate.format(rev.createdAt)}
+										</b>
+										<br />
+										{rev.title || 'Untitled'}
+									</span>
+								</div>
+							))
+						}
+					</div>
+				</div>
+				<div class="h-px" style="background: var(--color-divider);"></div>
+				<p class="m-0 text-[12px] leading-relaxed text-muted">
+					Reviewers see the version their comment was written against, so tidying your
+					abstract never orphans their feedback.
+				</p>
+			</aside>
+		</main>
+	</div>
+</Layout>

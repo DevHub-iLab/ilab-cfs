@@ -256,6 +256,24 @@
   }
   .seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
   .seg-opt:has(input:checked) { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+  /* The checked ring is an inset shadow, so it follows the option's own
+     border-radius — and an option has none, so the ring is square. At the ends
+     of the group the container's rounded corners clip it, and the ring reads as
+     sliced off. Giving the end options the container's *inner* radius — its 8px
+     less the 1px border they sit inside — puts the ring on the same curve as the
+     clip.
+
+     This is the one place the component layer is NOT verbatim Nocturne:
+     `styles.css` upstream has the same rules and the same bug, checked
+     2026-09-13. Keep the divergence if that file is re-ported. */
+  .seg-opt:first-child {
+    border-start-start-radius: calc(var(--radius-md) - 1px);
+    border-end-start-radius: calc(var(--radius-md) - 1px);
+  }
+  .seg-opt:last-child {
+    border-start-end-radius: calc(var(--radius-md) - 1px);
+    border-end-end-radius: calc(var(--radius-md) - 1px);
+  }
   .seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
   .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 

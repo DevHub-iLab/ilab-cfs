@@ -1,0 +1,102 @@
+---
+import { asc, gt, isNull, or, sql } from 'drizzle-orm';
+import Layout from '../../layouts/Layout.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import ProposalForm from '../../components/ProposalForm.astro';
+import { db } from '../../db';
+import { cfp } from '../../db/schema';
+
+export const prerender = false;
+
+const now = new Date();
+
+// Same predicate as the homepage and as the insert's own guard: a call is open
+// while it has no deadline or its deadline is still ahead.
+const openCalls = await db
+	.select()
+	.from(cfp)
+	.where(or(isNull(cfp.closesAt), gt(cfp.closesAt, now)))
+	.orderBy(sql`${cfp.closesAt} is null`, asc(cfp.closesAt), asc(cfp.createdAt));
+
+// Arriving from a specific call's "Submit a proposal" button. Unknown or closed
+// ids simply fall back to the first open call rather than erroring — the id is
+// a convenience, and the insert re-checks the window regardless.
+const preselected = Astro.url.searchParams.get('cfp');
+const ordered = openCalls.some((c) => c.id === preselected)
+	? [...openCalls].sort((a, b) => (a.id === preselected ? -1 : b.id === preselected ? 1 : 0))
+	: openCalls;
+
+const error = Astro.url.searchParams.get('error');
+const ERRORS: Record<string, string> = {
+	closed: 'That call closed while you were writing. Your words are still here — pick another call, or keep them for the next one.',
+	title: 'Give the talk a title before submitting it.',
+	abstract: 'The abstract is what reviewers read. It cannot be empty.',
+};
+---
+
+<Layout title="New proposal — iLab CFS">
+	<div class="flex min-h-full flex-col">
+		<SiteNav user={Astro.locals.user} current="proposals" cta={false}>
+			<span slot="status" class="text-[13px] text-muted">Not saved yet</span>
+		</SiteNav>
+
+		<main class="page-x grid flex-1 gap-[30px] py-[30px] lg:grid-cols-[1fr_300px]">
+			<div class="flex flex-col gap-[20px]">
+				<div>
+					<h1 class="m-0 mb-[5px] text-[32px]">New proposal</h1>
+					<p class="m-0 text-[14px] text-muted">
+						Everything here stays editable after you submit — including after you're
+						scheduled.
+					</p>
+				</div>
+
+				{
+					openCalls.length === 0 ? (
+						<p
+							class="m-0 rounded-[8px] px-[16px] py-[14px] text-[14px]"
+							style="box-shadow: inset 0 0 0 1px var(--color-divider);"
+						>
+							No call is open right now, so there is nothing to submit to yet. The
+							committee posts the next one on the <a href="/">homepage</a>.
+						</p>
+					) : (
+						<ProposalForm
+							action="/proposals/create"
+							calls={ordered}
+							content={{
+								title: '',
+								abstract: '',
+								format: 'talk',
+								level: 'intermediate',
+								topics: [],
+								links: [],
+								bio: '',
+							}}
+							error={error ? (ERRORS[error] ?? ERRORS.closed) : undefined}
+						/>
+					)
+				}
+			</div>
+
+			<aside
+				class="flex flex-col gap-[18px] self-start rounded-[8px] p-[22px]"
+				style="background: var(--color-surface);"
+			>
+				<div>
+					<div style="font: 500 14px var(--font-heading);" class="mb-[8px]">
+						A good abstract here
+					</div>
+					<p class="m-0 text-[13px] leading-relaxed text-muted">
+						Says what happens in the room. One specific story beats a survey of a field.
+						Reviewers can see your name — they're not scoring your CV.
+					</p>
+				</div>
+				<div class="h-px" style="background: var(--color-divider);"></div>
+				<p class="m-0 text-[12px] leading-relaxed text-muted">
+					Every save is kept as a version, so reviewers see the wording their comment was
+					written against and tidying your abstract never orphans their feedback.
+				</p>
+			</aside>
+		</main>
+	</div>
+</Layout>

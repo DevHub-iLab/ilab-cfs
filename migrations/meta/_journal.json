@@ -15,6 +15,13 @@
       "when": 1789209442474,
       "tag": "0001_known_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789312679025,
+      "tag": "0002_overrated_calypso",
+      "breakpoints": true
     }
   ]
 }

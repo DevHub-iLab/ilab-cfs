@@ -4,7 +4,7 @@ Innovation Lab @ NTU CCDS call for speakers platform — one place where speaker
 
 Astro 7 on Cloudflare Workers · D1 (Drizzle) · R2 · KV · Better Auth · Resend.
 
-> **Status:** early. Authentication works end to end; the application tables and essentially every screen are still to be built. `docs/intent.md` is the source of truth for what this is and why it is shaped this way — read it before designing anything.
+> **Status:** early, but the speaker's half works. Someone can sign in, write a pitch, submit it, keep editing it and withdraw it. Nobody can answer them yet — the reviewer and admin screens, and the `event` and `review` tables behind them, are still to be built. `docs/intent.md` is the source of truth for what this is and why it is shaped this way — read it before designing anything.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ The first start takes a couple of minutes while Vite pre-bundles dependencies; l
 
 ## Signing in locally
 
-There is no `/sign-in` page yet, so the flow is driven by hand for now. Sign-in is passwordless — a magic link, or OAuth once credentials are configured.
+Sign-in is passwordless — a magic link, or OAuth once credentials are configured — and `/sign-in` does all of it in a browser. The rest of this section is for driving it by hand, which is quicker when you just need a session.
 
 Request a link:
 
